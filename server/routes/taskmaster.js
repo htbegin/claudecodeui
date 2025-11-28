@@ -1015,9 +1015,9 @@ router.post('/init/:projectName', async (req, res) => {
         initProcess.on('close', (code) => {
             if (code === 0) {
                 // Broadcast TaskMaster project update via WebSocket
-                if (req.app.locals.wss) {
+                if ((req.app.locals.realtime || req.app.locals.wss)) {
                     broadcastTaskMasterProjectUpdate(
-                        req.app.locals.wss, 
+                        (req.app.locals.realtime || req.app.locals.wss), 
                         projectName, 
                         { hasTaskmaster: true, status: 'initialized' }
                     );
@@ -1122,9 +1122,9 @@ router.post('/add-task/:projectName', async (req, res) => {
             
             if (code === 0) {
                 // Broadcast task update via WebSocket
-                if (req.app.locals.wss) {
+                if ((req.app.locals.realtime || req.app.locals.wss)) {
                     broadcastTaskMasterTasksUpdate(
-                        req.app.locals.wss, 
+                        (req.app.locals.realtime || req.app.locals.wss), 
                         projectName
                     );
                 }
@@ -1198,8 +1198,8 @@ router.put('/update-task/:projectName/:taskId', async (req, res) => {
             setStatusProcess.on('close', (code) => {
                 if (code === 0) {
                     // Broadcast task update via WebSocket
-                    if (req.app.locals.wss) {
-                        broadcastTaskMasterTasksUpdate(req.app.locals.wss, projectName);
+                    if ((req.app.locals.realtime || req.app.locals.wss)) {
+                        broadcastTaskMasterTasksUpdate((req.app.locals.realtime || req.app.locals.wss), projectName);
                     }
 
                     res.json({
@@ -1250,8 +1250,8 @@ router.put('/update-task/:projectName/:taskId', async (req, res) => {
             updateProcess.on('close', (code) => {
                 if (code === 0) {
                     // Broadcast task update via WebSocket
-                    if (req.app.locals.wss) {
-                        broadcastTaskMasterTasksUpdate(req.app.locals.wss, projectName);
+                    if ((req.app.locals.realtime || req.app.locals.wss)) {
+                        broadcastTaskMasterTasksUpdate((req.app.locals.realtime || req.app.locals.wss), projectName);
                     }
 
                     res.json({
@@ -1349,9 +1349,9 @@ router.post('/parse-prd/:projectName', async (req, res) => {
         parsePRDProcess.on('close', (code) => {
             if (code === 0) {
                 // Broadcast task update via WebSocket
-                if (req.app.locals.wss) {
+                if ((req.app.locals.realtime || req.app.locals.wss)) {
                     broadcastTaskMasterTasksUpdate(
-                        req.app.locals.wss, 
+                        (req.app.locals.realtime || req.app.locals.wss), 
                         projectName
                     );
                 }

@@ -12,8 +12,8 @@
  * @param {string} projectName - Name of the updated project
  * @param {Object} taskMasterData - Updated TaskMaster data
  */
-export function broadcastTaskMasterProjectUpdate(wss, projectName, taskMasterData) {
-    if (!wss || !projectName) {
+export function broadcastTaskMasterProjectUpdate(broadcaster, projectName, taskMasterData) {
+    if (!broadcaster || !projectName) {
         console.warn('TaskMaster WebSocket broadcast: Missing wss or projectName');
         return;
     }
@@ -26,15 +26,7 @@ export function broadcastTaskMasterProjectUpdate(wss, projectName, taskMasterDat
     };
 
     
-    wss.clients.forEach((client) => {
-        if (client.readyState === 1) { // WebSocket.OPEN
-            try {
-                client.send(JSON.stringify(message));
-            } catch (error) {
-                console.error('Error sending TaskMaster project update:', error);
-            }
-        }
-    });
+    sendMessage(broadcaster, message);
 }
 
 /**
@@ -43,8 +35,8 @@ export function broadcastTaskMasterProjectUpdate(wss, projectName, taskMasterDat
  * @param {string} projectName - Name of the project with updated tasks
  * @param {Object} tasksData - Updated tasks data
  */
-export function broadcastTaskMasterTasksUpdate(wss, projectName, tasksData) {
-    if (!wss || !projectName) {
+export function broadcastTaskMasterTasksUpdate(broadcaster, projectName, tasksData) {
+    if (!broadcaster || !projectName) {
         console.warn('TaskMaster WebSocket broadcast: Missing wss or projectName');
         return;
     }
@@ -57,15 +49,7 @@ export function broadcastTaskMasterTasksUpdate(wss, projectName, tasksData) {
     };
 
     
-    wss.clients.forEach((client) => {
-        if (client.readyState === 1) { // WebSocket.OPEN
-            try {
-                client.send(JSON.stringify(message));
-            } catch (error) {
-                console.error('Error sending TaskMaster tasks update:', error);
-            }
-        }
-    });
+    sendMessage(broadcaster, message);
 }
 
 /**
@@ -73,8 +57,8 @@ export function broadcastTaskMasterTasksUpdate(wss, projectName, tasksData) {
  * @param {WebSocket.Server} wss - WebSocket server instance
  * @param {Object} mcpStatus - Updated MCP server status
  */
-export function broadcastMCPStatusChange(wss, mcpStatus) {
-    if (!wss) {
+export function broadcastMCPStatusChange(broadcaster, mcpStatus) {
+    if (!broadcaster) {
         console.warn('TaskMaster WebSocket broadcast: Missing wss');
         return;
     }
@@ -86,15 +70,7 @@ export function broadcastMCPStatusChange(wss, mcpStatus) {
     };
 
     
-    wss.clients.forEach((client) => {
-        if (client.readyState === 1) { // WebSocket.OPEN
-            try {
-                client.send(JSON.stringify(message));
-            } catch (error) {
-                console.error('Error sending TaskMaster MCP status update:', error);
-            }
-        }
-    });
+    sendMessage(broadcaster, message);
 }
 
 /**
@@ -103,8 +79,8 @@ export function broadcastMCPStatusChange(wss, mcpStatus) {
  * @param {string} updateType - Type of update (e.g., 'initialization', 'configuration')
  * @param {Object} data - Additional data about the update
  */
-export function broadcastTaskMasterUpdate(wss, updateType, data = {}) {
-    if (!wss || !updateType) {
+export function broadcastTaskMasterUpdate(broadcaster, updateType, data = {}) {
+    if (!broadcaster || !updateType) {
         console.warn('TaskMaster WebSocket broadcast: Missing wss or updateType');
         return;
     }
@@ -117,13 +93,24 @@ export function broadcastTaskMasterUpdate(wss, updateType, data = {}) {
     };
 
     
-    wss.clients.forEach((client) => {
-        if (client.readyState === 1) { // WebSocket.OPEN
-            try {
-                client.send(JSON.stringify(message));
-            } catch (error) {
-                console.error('Error sending TaskMaster update:', error);
+    sendMessage(broadcaster, message);
+}
+
+function sendMessage(broadcaster, message) {
+    if (broadcaster.broadcast) {
+        broadcaster.broadcast(message);
+        return;
+    }
+
+    if (broadcaster.clients) {
+        broadcaster.clients.forEach((client) => {
+            if (client.readyState === 1) {
+                try {
+                    client.send(JSON.stringify(message));
+                } catch (error) {
+                    console.error('Error sending TaskMaster update:', error);
+                }
             }
-        }
-    });
+        });
+    }
 }

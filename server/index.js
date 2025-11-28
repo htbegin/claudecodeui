@@ -74,10 +74,14 @@ import cliAuthRoutes from './routes/cli-auth.js';
 import userRoutes from './routes/user.js';
 import { initializeDatabase } from './database/db.js';
 import { validateApiKey, authenticateToken, authenticateWebSocket } from './middleware/auth.js';
+import { broadcastRealtime, registerWebSocketClient, registerSseClient, getClientForUser } from './realtime.js';
 
 // File system watcher for projects folder
 let projectsWatcher = null;
 const connectedClients = new Set();
+app.locals.realtime = {
+    broadcast: broadcastRealtime,
+};
 
 // Setup file system watcher for Claude projects folder using chokidar
 async function setupProjectsWatcher() {
@@ -132,11 +136,7 @@ async function setupProjectsWatcher() {
                         changedFile: path.relative(claudeProjectsPath, filePath)
                     });
 
-                    connectedClients.forEach(client => {
-                        if (client.readyState === WebSocket.OPEN) {
-                            client.send(updateMessage);
-                        }
-                    });
+                    broadcastRealtime(JSON.parse(updateMessage));
 
                 } catch (error) {
                     console.error('[ERROR] Error handling project changes:', error);
@@ -257,6 +257,51 @@ app.use('/api/cli', authenticateToken, cliAuthRoutes);
 
 // User API Routes (protected)
 app.use('/api/user', authenticateToken, userRoutes);
+
+// Realtime SSE stream (default transport)
+app.get('/events', (req, res) => {
+    try {
+        const url = new URL(req.url, 'http://localhost');
+        const token = url.searchParams.get('token') || req.headers.authorization?.split(' ')[1];
+        const user = authenticateWebSocket(token);
+
+        if (!user) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+        res.flushHeaders?.();
+
+        registerSseClient(res, user);
+
+        res.write(`event: ready\ndata: {"status":"ok"}\n\n`);
+    } catch (error) {
+        console.error('[ERROR] SSE setup failed:', error);
+        res.status(500).json({ error: 'Failed to establish event stream' });
+    }
+});
+
+// HTTP-based realtime command path (non-WebSocket)
+app.post('/api/realtime/send', authenticateToken, async (req, res) => {
+    const userId = req.user?.id;
+    const targetClient = getClientForUser(userId);
+
+    if (!targetClient) {
+        return res.status(503).json({ error: 'No realtime client connected for this user' });
+    }
+
+    const bridgeClient = createBroadcastBridge(userId);
+
+    try {
+        await processChatMessage(req.body, bridgeClient);
+        res.json({ ok: true });
+    } catch (error) {
+        console.error('[ERROR] Realtime HTTP dispatch failed:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
 
 // Agent API Routes (uses API key authentication)
 app.use('/api/agent', agentRoutes);
@@ -695,7 +740,7 @@ wss.on('connection', (ws, request) => {
     if (pathname === '/shell') {
         handleShellConnection(ws);
     } else if (pathname === '/ws') {
-        handleChatConnection(ws);
+        handleChatConnection(ws, request.user);
     } else {
         console.log('[WARN] Unknown WebSocket path:', pathname);
         ws.close();
@@ -703,94 +748,17 @@ wss.on('connection', (ws, request) => {
 });
 
 // Handle chat WebSocket connections
-function handleChatConnection(ws) {
+function handleChatConnection(ws, user) {
     console.log('[INFO] Chat WebSocket connected');
 
     // Add to connected clients for project updates
     connectedClients.add(ws);
+    registerWebSocketClient(ws, user);
 
     ws.on('message', async (message) => {
         try {
             const data = JSON.parse(message);
-
-            if (data.type === 'claude-command') {
-                console.log('[DEBUG] User message:', data.command || '[Continue/Resume]');
-                console.log('📁 Project:', data.options?.projectPath || 'Unknown');
-                console.log('🔄 Session:', data.options?.sessionId ? 'Resume' : 'New');
-
-                // Use Claude Agents SDK
-                await queryClaudeSDK(data.command, data.options, ws);
-            } else if (data.type === 'cursor-command') {
-                console.log('[DEBUG] Cursor message:', data.command || '[Continue/Resume]');
-                console.log('📁 Project:', data.options?.cwd || 'Unknown');
-                console.log('🔄 Session:', data.options?.sessionId ? 'Resume' : 'New');
-                console.log('🤖 Model:', data.options?.model || 'default');
-                await spawnCursor(data.command, data.options, ws);
-            } else if (data.type === 'cursor-resume') {
-                // Backward compatibility: treat as cursor-command with resume and no prompt
-                console.log('[DEBUG] Cursor resume session (compat):', data.sessionId);
-                await spawnCursor('', {
-                    sessionId: data.sessionId,
-                    resume: true,
-                    cwd: data.options?.cwd
-                }, ws);
-            } else if (data.type === 'abort-session') {
-                console.log('[DEBUG] Abort session request:', data.sessionId);
-                const provider = data.provider || 'claude';
-                let success;
-
-                if (provider === 'cursor') {
-                    success = abortCursorSession(data.sessionId);
-                } else {
-                    // Use Claude Agents SDK
-                    success = await abortClaudeSDKSession(data.sessionId);
-                }
-
-                ws.send(JSON.stringify({
-                    type: 'session-aborted',
-                    sessionId: data.sessionId,
-                    provider,
-                    success
-                }));
-            } else if (data.type === 'cursor-abort') {
-                console.log('[DEBUG] Abort Cursor session:', data.sessionId);
-                const success = abortCursorSession(data.sessionId);
-                ws.send(JSON.stringify({
-                    type: 'session-aborted',
-                    sessionId: data.sessionId,
-                    provider: 'cursor',
-                    success
-                }));
-            } else if (data.type === 'check-session-status') {
-                // Check if a specific session is currently processing
-                const provider = data.provider || 'claude';
-                const sessionId = data.sessionId;
-                let isActive;
-
-                if (provider === 'cursor') {
-                    isActive = isCursorSessionActive(sessionId);
-                } else {
-                    // Use Claude Agents SDK
-                    isActive = isClaudeSDKSessionActive(sessionId);
-                }
-
-                ws.send(JSON.stringify({
-                    type: 'session-status',
-                    sessionId,
-                    provider,
-                    isProcessing: isActive
-                }));
-            } else if (data.type === 'get-active-sessions') {
-                // Get all currently active sessions
-                const activeSessions = {
-                    claude: getActiveClaudeSDKSessions(),
-                    cursor: getActiveCursorSessions()
-                };
-                ws.send(JSON.stringify({
-                    type: 'active-sessions',
-                    sessions: activeSessions
-                }));
-            }
+            await processChatMessage(data, ws);
         } catch (error) {
             console.error('[ERROR] Chat WebSocket error:', error.message);
             ws.send(JSON.stringify({
@@ -805,6 +773,83 @@ function handleChatConnection(ws) {
         // Remove from connected clients
         connectedClients.delete(ws);
     });
+}
+
+async function processChatMessage(data, client) {
+    if (data.type === 'claude-command') {
+        console.log('[DEBUG] User message:', data.command || '[Continue/Resume]');
+        console.log('📁 Project:', data.options?.projectPath || 'Unknown');
+        console.log('🔄 Session:', data.options?.sessionId ? 'Resume' : 'New');
+
+        await queryClaudeSDK(data.command, data.options, client);
+    } else if (data.type === 'cursor-command') {
+        console.log('[DEBUG] Cursor message:', data.command || '[Continue/Resume]');
+        console.log('📁 Project:', data.options?.cwd || 'Unknown');
+        console.log('🔄 Session:', data.options?.sessionId ? 'Resume' : 'New');
+        console.log('🤖 Model:', data.options?.model || 'default');
+        await spawnCursor(data.command, data.options, client);
+    } else if (data.type === 'cursor-resume') {
+        console.log('[DEBUG] Cursor resume session (compat):', data.sessionId);
+        await spawnCursor('', {
+            sessionId: data.sessionId,
+            resume: true,
+            cwd: data.options?.cwd
+        }, client);
+    } else if (data.type === 'abort-session' || data.type === 'cursor-abort') {
+        console.log('[DEBUG] Abort session request:', data.sessionId);
+        const provider = data.provider || (data.type === 'cursor-abort' ? 'cursor' : 'claude');
+        let success;
+
+        if (provider === 'cursor') {
+            success = abortCursorSession(data.sessionId);
+        } else {
+            success = await abortClaudeSDKSession(data.sessionId);
+        }
+
+        client.send(JSON.stringify({
+            type: 'session-aborted',
+            sessionId: data.sessionId,
+            provider,
+            success
+        }));
+    } else if (data.type === 'check-session-status') {
+        const provider = data.provider || 'claude';
+        const sessionId = data.sessionId;
+        const isActive = provider === 'cursor'
+            ? isCursorSessionActive(sessionId)
+            : isClaudeSDKSessionActive(sessionId);
+
+        client.send(JSON.stringify({
+            type: 'session-status',
+            sessionId,
+            provider,
+            isProcessing: isActive
+        }));
+    } else if (data.type === 'get-active-sessions') {
+        const activeSessions = {
+            claude: getActiveClaudeSDKSessions(),
+            cursor: getActiveCursorSessions()
+        };
+        client.send(JSON.stringify({
+            type: 'active-sessions',
+            sessions: activeSessions
+        }));
+    }
+}
+
+function createBroadcastBridge(userId) {
+    return {
+        send: (payload) => {
+            let message = payload;
+            try {
+                message = typeof payload === 'string' ? JSON.parse(payload) : payload;
+            } catch (error) {
+                console.error('[WARN] Failed to parse realtime payload for broadcast:', error);
+                message = { type: 'error', error: 'Malformed realtime payload' };
+            }
+            broadcastRealtime(message, { userId });
+        }
+    };
 }
 
 // Handle shell WebSocket connections
