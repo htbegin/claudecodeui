@@ -9,7 +9,7 @@
  * - Direct SDK integration without child processes
  * - Session management with abort capability
  * - Options mapping between CLI and SDK formats
- * - WebSocket message streaming
+ * - Realtime message streaming
  */
 
 import { query } from '@anthropic-ai/claude-agent-sdk';
@@ -141,9 +141,9 @@ function getAllSessions() {
 }
 
 /**
- * Transforms SDK messages to WebSocket format expected by frontend
+ * Transforms SDK messages to realtime format expected by frontend
  * @param {Object} sdkMessage - SDK message object
- * @returns {Object} Transformed message ready for WebSocket
+ * @returns {Object} Transformed message ready for realtime stream
  */
 function transformMessage(sdkMessage) {
   // SDK messages are already in a format compatible with the frontend
@@ -343,7 +343,7 @@ async function loadMcpConfig(cwd) {
  * Executes a Claude query using the SDK
  * @param {string} command - User prompt/command
  * @param {Object} options - Query options
- * @param {Object} ws - WebSocket connection
+ * @param {Object} ws - Realtime stream writer
  * @returns {Promise<void>}
  */
 async function queryClaudeSDK(command, options = {}, ws) {
@@ -408,7 +408,7 @@ async function queryClaudeSDK(command, options = {}, ws) {
         console.log('No session_id in message or already captured. message.session_id:', message.session_id, 'capturedSessionId:', capturedSessionId);
       }
 
-      // Transform and send message to WebSocket
+      // Transform and send message to realtime stream
       const transformedMessage = transformMessage(message);
       ws.send(JSON.stringify({
         type: 'claude-response',
@@ -457,7 +457,7 @@ async function queryClaudeSDK(command, options = {}, ws) {
     // Clean up temporary image files on error
     await cleanupTempFiles(tempImagePaths, tempDir);
 
-    // Send error to WebSocket
+    // Send error to realtime stream
     ws.send(JSON.stringify({
       type: 'claude-error',
       error: error.message

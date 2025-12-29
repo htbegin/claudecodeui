@@ -107,7 +107,7 @@ This document outlines the requirements for building an AI-powered task manageme
 - React.js with TypeScript for type safety
 - Modern UI framework (Tailwind CSS)
 - State management (Context API or Redux)
-- Real-time updates via WebSockets
+- Real-time updates via SSE
 - Progressive Web App (PWA) support
 - Accessibility compliance (WCAG 2.1 AA)
 

@@ -4,7 +4,7 @@
  * SESSION PROTECTION SYSTEM OVERVIEW:
  * ===================================
  * 
- * Problem: Automatic project updates from WebSocket would refresh the sidebar and clear chat messages
+ * Problem: Automatic project updates from realtime updates would refresh the sidebar and clear chat messages
  * during active conversations, creating a poor user experience.
  * 
  * Solution: Track "active sessions" and pause project updates during conversations.
@@ -31,7 +31,7 @@ import { ThemeProvider } from './contexts/ThemeContext';
 import { AuthProvider } from './contexts/AuthContext';
 import { TaskMasterProvider } from './contexts/TaskMasterContext';
 import { TasksSettingsProvider } from './contexts/TasksSettingsContext';
-import { WebSocketProvider, useWebSocketContext } from './contexts/WebSocketContext';
+import { RealtimeProvider, useRealtimeContext } from './contexts/RealtimeContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import { useVersionCheck } from './hooks/useVersionCheck';
 import useLocalStorage from './hooks/useLocalStorage';
@@ -77,7 +77,7 @@ function AppContent() {
   // Triggers ChatInterface to reload messages without switching sessions
   const [externalMessageUpdate, setExternalMessageUpdate] = useState(0);
 
-  const { ws, sendMessage, messages } = useWebSocketContext();
+  const { sendMessage, messages } = useRealtimeContext();
   
   // Detect if running as PWA
   const [isPWA, setIsPWA] = useState(false);
@@ -166,7 +166,7 @@ function AppContent() {
     return sessionUnchanged;
   };
 
-  // Handle WebSocket messages for real-time project updates
+  // Handle realtime messages for project updates
   useEffect(() => {
     if (messages.length > 0) {
       const latestMessage = messages[messages.length - 1];
@@ -217,7 +217,7 @@ function AppContent() {
           // Continue with additive updates below
         }
         
-        // Update projects state with the new data from WebSocket
+        // Update projects state with the new data from realtime stream
         const updatedProjects = latestMessage.projects;
         setProjects(updatedProjects);
 
@@ -527,7 +527,7 @@ function AppContent() {
     }
   }, []);
 
-  // replaceTemporarySession: Called when WebSocket provides real session ID for new sessions
+  // replaceTemporarySession: Called when realtime updates provide real session ID for new sessions
   // Removes temporary "new-session-*" identifiers and adds the real session ID
   // This maintains protection continuity during the transition from temporary to real session
   const replaceTemporarySession = useCallback((realSessionId) => {
@@ -879,7 +879,6 @@ function AppContent() {
           selectedSession={selectedSession}
           activeTab={activeTab}
           setActiveTab={setActiveTab}
-          ws={ws}
           sendMessage={sendMessage}
           messages={messages}
           isMobile={isMobile}
@@ -950,7 +949,7 @@ function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <WebSocketProvider>
+        <RealtimeProvider>
           <TasksSettingsProvider>
             <TaskMasterProvider>
               <ProtectedRoute>
@@ -963,7 +962,7 @@ function App() {
               </ProtectedRoute>
             </TaskMasterProvider>
           </TasksSettingsProvider>
-        </WebSocketProvider>
+        </RealtimeProvider>
       </AuthProvider>
     </ThemeProvider>
   );

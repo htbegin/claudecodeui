@@ -18,7 +18,7 @@ import { dirname } from 'path';
 import os from 'os';
 import { extractProjectDirectory } from '../projects.js';
 import { detectTaskMasterMCPServer } from '../utils/mcp-detector.js';
-import { broadcastTaskMasterProjectUpdate, broadcastTaskMasterTasksUpdate } from '../utils/taskmaster-websocket.js';
+import { broadcastTaskMasterProjectUpdate, broadcastTaskMasterTasksUpdate } from '../utils/taskmaster-events.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -1012,14 +1012,7 @@ router.post('/init/:projectName', async (req, res) => {
 
         initProcess.on('close', (code) => {
             if (code === 0) {
-                // Broadcast TaskMaster project update via WebSocket
-                if (req.app.locals.wss) {
-                    broadcastTaskMasterProjectUpdate(
-                        req.app.locals.wss, 
-                        projectName, 
-                        { hasTaskmaster: true, status: 'initialized' }
-                    );
-                }
+                broadcastTaskMasterProjectUpdate(projectName, { hasTaskmaster: true, status: 'initialized' });
 
                 res.json({
                     projectName,
@@ -1119,13 +1112,7 @@ router.post('/add-task/:projectName', async (req, res) => {
             console.log('Stderr:', stderr);
             
             if (code === 0) {
-                // Broadcast task update via WebSocket
-                if (req.app.locals.wss) {
-                    broadcastTaskMasterTasksUpdate(
-                        req.app.locals.wss, 
-                        projectName
-                    );
-                }
+                broadcastTaskMasterTasksUpdate(projectName);
 
                 res.json({
                     projectName,
@@ -1195,10 +1182,7 @@ router.put('/update-task/:projectName/:taskId', async (req, res) => {
 
             setStatusProcess.on('close', (code) => {
                 if (code === 0) {
-                    // Broadcast task update via WebSocket
-                    if (req.app.locals.wss) {
-                        broadcastTaskMasterTasksUpdate(req.app.locals.wss, projectName);
-                    }
+                    broadcastTaskMasterTasksUpdate(projectName);
 
                     res.json({
                         projectName,
@@ -1247,10 +1231,7 @@ router.put('/update-task/:projectName/:taskId', async (req, res) => {
 
             updateProcess.on('close', (code) => {
                 if (code === 0) {
-                    // Broadcast task update via WebSocket
-                    if (req.app.locals.wss) {
-                        broadcastTaskMasterTasksUpdate(req.app.locals.wss, projectName);
-                    }
+                    broadcastTaskMasterTasksUpdate(projectName);
 
                     res.json({
                         projectName,
@@ -1346,13 +1327,7 @@ router.post('/parse-prd/:projectName', async (req, res) => {
 
         parsePRDProcess.on('close', (code) => {
             if (code === 0) {
-                // Broadcast task update via WebSocket
-                if (req.app.locals.wss) {
-                    broadcastTaskMasterTasksUpdate(
-                        req.app.locals.wss, 
-                        projectName
-                    );
-                }
+                broadcastTaskMasterTasksUpdate(projectName);
 
                 res.json({
                     projectName,
@@ -1617,7 +1592,7 @@ Brief description of the mobile app's purpose, target audience, and key value pr
 
 ### Backend Integration
 - REST API or GraphQL integration
-- Real-time features (WebSockets/Push notifications)
+- Real-time features (SSE/Push notifications)
 - Offline data synchronization
 - Background processing
 

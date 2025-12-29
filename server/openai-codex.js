@@ -7,7 +7,7 @@
  *
  * ## Usage
  *
- * - queryCodex(command, options, ws) - Execute a prompt with streaming via WebSocket
+ * - queryCodex(command, options, ws) - Execute a prompt with streaming via SSE
  * - abortCodexSession(sessionId) - Cancel an active session
  * - isCodexSessionActive(sessionId) - Check if a session is running
  * - getActiveCodexSessions() - List all active sessions
@@ -19,9 +19,9 @@ import { Codex } from '@openai/codex-sdk';
 const activeCodexSessions = new Map();
 
 /**
- * Transform Codex SDK event to WebSocket message format
+ * Transform Codex SDK event to realtime message format
  * @param {object} event - SDK event
- * @returns {object} - Transformed event for WebSocket
+ * @returns {object} - Transformed event for realtime streaming
  */
 function transformCodexEvent(event) {
   // Map SDK event types to a consistent format
@@ -186,7 +186,7 @@ function mapPermissionModeToCodexOptions(permissionMode) {
  * Execute a Codex query with streaming
  * @param {string} command - The prompt to send
  * @param {object} options - Options including cwd, sessionId, model, permissionMode
- * @param {WebSocket|object} ws - WebSocket connection or response writer
+ * @param {object} ws - Realtime stream writer
  */
 export async function queryCodex(command, options = {}, ws) {
   const {
@@ -353,14 +353,14 @@ export function getActiveCodexSessions() {
 }
 
 /**
- * Helper to send message via WebSocket or writer
- * @param {WebSocket|object} ws - WebSocket or response writer
+ * Helper to send message via realtime writer
+ * @param {object} ws - Realtime stream writer
  * @param {object} data - Data to send
  */
 function sendMessage(ws, data) {
   try {
     if (typeof ws.send === 'function') {
-      // WebSocket
+      // Realtime stream writer
       ws.send(JSON.stringify(data));
     } else if (typeof ws.write === 'function') {
       // SSE writer (for agent API)
