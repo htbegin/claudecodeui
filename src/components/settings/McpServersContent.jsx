@@ -2,11 +2,11 @@ import { useState } from 'react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Badge } from '../ui/badge';
-import { Server, Plus, Edit3, Trash2, Terminal, Globe, Zap, X } from 'lucide-react';
+import { Server, Plus, Edit3, Trash2, Globe, Zap, X } from 'lucide-react';
 
 const getTransportIcon = (type) => {
   switch (type) {
-    case 'stdio': return <Terminal className="w-4 h-4" />;
+    case 'stdio': return <Server className="w-4 h-4" />;
     case 'sse': return <Zap className="w-4 h-4" />;
     case 'http': return <Globe className="w-4 h-4" />;
     default: return <Server className="w-4 h-4" />;
@@ -167,7 +167,7 @@ function CursorMcpServers({ servers, onAdd, onEdit, onDelete }) {
             <div className="flex items-start justify-between">
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-2">
-                  <Terminal className="w-4 h-4" />
+                  <Server className="w-4 h-4" />
                   <span className="font-medium text-foreground">{server.name}</span>
                   <Badge variant="outline" className="text-xs">stdio</Badge>
                 </div>
@@ -239,7 +239,7 @@ function CodexMcpServers({ servers, onAdd, onEdit, onDelete }) {
             <div className="flex items-start justify-between">
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-2">
-                  <Terminal className="w-4 h-4" />
+                  <Server className="w-4 h-4" />
                   <span className="font-medium text-foreground">{server.name}</span>
                   <Badge variant="outline" className="text-xs">stdio</Badge>
                 </div>
