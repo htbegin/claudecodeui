@@ -191,7 +191,7 @@ This document outlines the requirements for building an AI-powered task manageme
 ### Development Tools
 - VS Code extension with task panel and quick actions
 - Cursor IDE integration with AI task suggestions
-- Terminal CLI for command-line workflow
+- CLI workflow for command-line usage
 - Browser extension for web-based tools
 
 ### Third-Party Services
