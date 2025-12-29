@@ -237,7 +237,7 @@ const TaskMasterSetupWizard = ({
                     onChange={(e) => setSetupData(prev => ({ ...prev, addAliases: e.target.checked }))}
                     className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
                   />
-                  <span className="text-sm text-gray-700 dark:text-gray-300">Add shell aliases (tm, taskmaster)</span>
+                  <span className="text-sm text-gray-700 dark:text-gray-300">Add CLI aliases (tm, taskmaster)</span>
                 </label>
               </div>
 

@@ -1417,7 +1417,7 @@ async function getCodexSessionMessages(sessionId, limit = null, offset = 0) {
             let toolInput = entry.payload.arguments;
 
             // Map Codex tool names to Claude equivalents
-            if (toolName === 'shell_command') {
+            if (toolName?.endsWith('_command')) {
               toolName = 'Bash';
               try {
                 const args = JSON.parse(entry.payload.arguments);
