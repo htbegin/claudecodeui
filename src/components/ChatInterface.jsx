@@ -9,7 +9,7 @@
  * 
  * Key Integration Points:
  * 1. handleSubmit() - Marks session as active when user sends message (including temp ID for new sessions)
- * 2. session-created handler - Replaces temporary session ID with real WebSocket session ID  
+ * 2. session-created handler - Replaces temporary session ID with real session ID  
  * 3. claude-complete handler - Marks session as inactive when conversation finishes
  * 4. session-aborted handler - Marks session as inactive when conversation is aborted
  * 
@@ -1658,10 +1658,10 @@ const ImageAttachment = ({ file, onRemove, uploadProgress, error }) => {
 // Session Protection System prevents automatic project updates from interrupting active conversations:
 // - onSessionActive: Called when user sends message to mark session as protected
 // - onSessionInactive: Called when conversation completes/aborts to re-enable updates
-// - onReplaceTemporarySession: Called to replace temporary session ID with real WebSocket session ID
+// - onReplaceTemporarySession: Called to replace temporary session ID with real session ID
 //
 // This ensures uninterrupted chat experience by pausing sidebar refreshes during conversations.
-function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, messages, onFileOpen, onInputFocusChange, onSessionActive, onSessionInactive, onSessionProcessing, onSessionNotProcessing, processingSessions, onReplaceTemporarySession, onNavigateToSession, onShowSettings, autoExpandTools, showRawParameters, showThinking, autoScrollToBottom, sendByCtrlEnter, externalMessageUpdate, onTaskClick, onShowAllTasks }) {
+function ChatInterface({ selectedProject, selectedSession, sendMessage, messages, onFileOpen, onInputFocusChange, onSessionActive, onSessionInactive, onSessionProcessing, onSessionNotProcessing, processingSessions, onReplaceTemporarySession, onNavigateToSession, onShowSettings, autoExpandTools, showRawParameters, showThinking, autoScrollToBottom, sendByCtrlEnter, externalMessageUpdate, onTaskClick, onShowAllTasks }) {
   const { tasksEnabled, isTaskMasterInstalled } = useTasksSettings();
   const [input, setInput] = useState(() => {
     if (typeof window !== 'undefined' && selectedProject) {
@@ -2690,7 +2690,7 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, mess
     return convertSessionMessages(sessionMessages);
   }, [sessionMessages]);
 
-  // Note: Token budgets are not saved to JSONL files, only sent via WebSocket
+  // Note: Token budgets are not saved to JSONL files, only sent via realtime stream
   // So we don't try to extract them from loaded sessionMessages
 
   // Define scroll functions early to avoid hoisting issues in useEffect dependencies
@@ -2764,14 +2764,14 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, mess
           setHasMoreMessages(false);
           setTotalMessages(0);
           // Reset token budget when switching sessions
-          // It will update when user sends a message and receives new budget from WebSocket
+          // It will update when user sends a message and receives new budget from realtime stream
           setTokenBudget(null);
           // Reset loading state when switching sessions (unless the new session is processing)
           // The restore effect will set it back to true if needed
           setIsLoading(false);
 
           // Check if the session is currently processing on the backend
-          if (ws && sendMessage) {
+          if (sendMessage) {
             sendMessage({
               type: 'check-session-status',
               sessionId: selectedSession.id,
@@ -2785,7 +2785,7 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, mess
           setTotalMessages(0);
 
           // Check if the session is currently processing on the backend
-          if (ws && sendMessage) {
+          if (sendMessage) {
             sendMessage({
               type: 'check-session-status',
               sessionId: selectedSession.id,
@@ -2816,7 +2816,7 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, mess
           setCurrentSessionId(selectedSession.id);
           
           // Only load messages from API if this is a user-initiated session change
-          // For system-initiated changes, preserve existing messages and rely on WebSocket
+          // For system-initiated changes, preserve existing messages and rely on realtime updates
           if (!isSystemSessionChange) {
             const messages = await loadSessionMessages(selectedProject.name, selectedSession.id, false, selectedSession.__provider || 'claude');
             setSessionMessages(messages);
@@ -2948,7 +2948,7 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, mess
   }, [currentSessionId, processingSessions]);
 
   useEffect(() => {
-    // Handle WebSocket messages
+    // Handle realtime messages
     if (messages.length > 0) {
       const latestMessage = messages[messages.length - 1];
 
@@ -2981,7 +2981,7 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, mess
           break;
 
         case 'token-budget':
-          // Use token budget from WebSocket for active sessions
+          // Use token budget from realtime stream for active sessions
           if (latestMessage.data) {
             setTokenBudget(latestMessage.data);
           }
@@ -3395,7 +3395,7 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, mess
                 setCurrentSessionId(pendingSessionId);
             sessionStorage.removeItem('pendingSessionId');
 
-            // No need to manually refresh - projects_updated WebSocket message will handle it
+            // No need to manually refresh - projects_updated realtime message will handle it
             console.log('✅ New session complete, ID set to:', pendingSessionId);
           }
           

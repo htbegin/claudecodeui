@@ -72,40 +72,9 @@ const generateToken = (user) => {
   );
 };
 
-// WebSocket authentication function
-const authenticateWebSocket = (token) => {
-  // Platform mode: bypass token validation, return first user
-  if (process.env.VITE_IS_PLATFORM === 'true') {
-    try {
-      const user = userDb.getFirstUser();
-      if (user) {
-        return { userId: user.id, username: user.username };
-      }
-      return null;
-    } catch (error) {
-      console.error('Platform mode WebSocket error:', error);
-      return null;
-    }
-  }
-
-  // Normal OSS JWT validation
-  if (!token) {
-    return null;
-  }
-
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    return decoded;
-  } catch (error) {
-    console.error('WebSocket token verification error:', error);
-    return null;
-  }
-};
-
 export {
   validateApiKey,
   authenticateToken,
   generateToken,
-  authenticateWebSocket,
   JWT_SECRET
 };

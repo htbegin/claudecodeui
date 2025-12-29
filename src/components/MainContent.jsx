@@ -32,7 +32,6 @@ function MainContent({
   selectedSession,
   activeTab,
   setActiveTab,
-  ws,
   sendMessage,
   messages,
   isMobile,
@@ -47,7 +46,7 @@ function MainContent({
   onSessionProcessing,    // Mark session as processing (thinking/working)
   onSessionNotProcessing, // Mark session as not processing (finished thinking)
   processingSessions,     // Set of session IDs currently processing
-  onReplaceTemporarySession, // Replace temporary session ID with real session ID from WebSocket
+  onReplaceTemporarySession, // Replace temporary session ID with real session ID from realtime stream
   onNavigateToSession,    // Navigate to a specific session (for Claude CLI session duplication workaround)
   onShowSettings,         // Show tools settings panel
   autoExpandTools,        // Auto-expand tool accordions
@@ -455,7 +454,6 @@ function MainContent({
               <ChatInterface
               selectedProject={selectedProject}
               selectedSession={selectedSession}
-              ws={ws}
               sendMessage={sendMessage}
               messages={messages}
               onFileOpen={handleFileOpen}
