@@ -36,3 +36,22 @@ export function getProxyEnv(provider) {
   const prefix = proxyKeyMap[provider];
   return buildProxyEnv(prefix);
 }
+
+const proxyKeys = [
+  'http_proxy',
+  'https_proxy',
+  'no_proxy',
+  'HTTP_PROXY',
+  'HTTPS_PROXY',
+  'NO_PROXY'
+];
+
+export function getProviderEnv(provider) {
+  const env = { ...process.env };
+
+  for (const key of proxyKeys) {
+    delete env[key];
+  }
+
+  return { ...env, ...getProxyEnv(provider) };
+}

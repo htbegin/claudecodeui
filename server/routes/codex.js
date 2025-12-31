@@ -5,7 +5,7 @@ import path from 'path';
 import os from 'os';
 import TOML from '@iarna/toml';
 import { getCodexSessions, getCodexSessionMessages, deleteCodexSession } from '../projects.js';
-import { getProxyEnv } from '../utils/proxy-env.js';
+import { getProviderEnv } from '../utils/proxy-env.js';
 
 const router = express.Router();
 
@@ -91,7 +91,7 @@ router.get('/mcp/cli/list', async (req, res) => {
   try {
     const proc = spawn('codex', ['mcp', 'list'], {
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, ...getProxyEnv('codex') }
+      env: getProviderEnv('codex')
     });
 
     let stdout = '';
@@ -139,7 +139,7 @@ router.post('/mcp/cli/add', async (req, res) => {
 
     const proc = spawn('codex', cliArgs, {
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, ...getProxyEnv('codex') }
+      env: getProviderEnv('codex')
     });
 
     let stdout = '';
@@ -170,7 +170,7 @@ router.delete('/mcp/cli/remove/:name', async (req, res) => {
 
     const proc = spawn('codex', ['mcp', 'remove', name], {
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, ...getProxyEnv('codex') }
+      env: getProviderEnv('codex')
     });
 
     let stdout = '';
@@ -201,7 +201,7 @@ router.get('/mcp/cli/get/:name', async (req, res) => {
 
     const proc = spawn('codex', ['mcp', 'get', name], {
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, ...getProxyEnv('codex') }
+      env: getProviderEnv('codex')
     });
 
     let stdout = '';

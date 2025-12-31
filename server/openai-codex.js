@@ -14,7 +14,7 @@
  */
 
 import { Codex } from '@openai/codex-sdk';
-import { getProxyEnv } from './utils/proxy-env.js';
+import { getProviderEnv } from './utils/proxy-env.js';
 
 // Track active sessions
 const activeCodexSessions = new Map();
@@ -206,13 +206,8 @@ export async function queryCodex(command, options = {}, ws) {
   let currentSessionId = sessionId;
 
   try {
-    const proxyEnv = getProxyEnv('codex');
-    const codexOptions = Object.keys(proxyEnv).length > 0
-      ? { env: { ...process.env, ...proxyEnv } }
-      : undefined;
-
     // Initialize Codex SDK
-    codex = new Codex(codexOptions);
+    codex = new Codex({ env: getProviderEnv('codex') });
 
     // Thread options with sandbox and approval settings
     const threadOptions = {

@@ -5,7 +5,7 @@ import os from 'os';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { spawn } from 'child_process';
-import { getProxyEnv } from '../utils/proxy-env.js';
+import { getProviderEnv } from '../utils/proxy-env.js';
 
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
@@ -24,7 +24,7 @@ router.get('/cli/list', async (req, res) => {
     
     const process = spawn('claude', ['mcp', 'list'], {
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, ...getProxyEnv('claude') }
+      env: getProviderEnv('claude')
     });
     
     let stdout = '';
@@ -101,7 +101,7 @@ router.post('/cli/add', async (req, res) => {
     // For local scope, we need to run the command in the project directory
     const spawnOptions = {
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, ...getProxyEnv('claude') }
+      env: getProviderEnv('claude')
     };
     
     if (scope === 'local' && projectPath) {
@@ -195,7 +195,7 @@ router.post('/cli/add-json', async (req, res) => {
     // For local scope, we need to run the command in the project directory
     const spawnOptions = {
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, ...getProxyEnv('claude') }
+      env: getProviderEnv('claude')
     };
     
     if (scope === 'local' && projectPath) {
@@ -273,7 +273,7 @@ router.delete('/cli/remove/:name', async (req, res) => {
     
     const process = spawn('claude', cliArgs, {
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, ...getProxyEnv('claude') }
+      env: getProviderEnv('claude')
     });
     
     let stdout = '';
@@ -317,7 +317,7 @@ router.get('/cli/get/:name', async (req, res) => {
     
     const process = spawn('claude', ['mcp', 'get', name], {
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, ...getProxyEnv('claude') }
+      env: getProviderEnv('claude')
     });
     
     let stdout = '';
