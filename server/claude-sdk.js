@@ -16,6 +16,7 @@ import { query } from '@anthropic-ai/claude-agent-sdk';
 import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
+import { withProxyEnv } from './utils/proxy-env.js';
 
 // Session tracking: Map of session IDs to active query instances
 const activeSessions = new Map();
@@ -347,124 +348,126 @@ async function loadMcpConfig(cwd) {
  * @returns {Promise<void>}
  */
 async function queryClaudeSDK(command, options = {}, ws) {
-  const { sessionId } = options;
-  let capturedSessionId = sessionId;
-  let sessionCreatedSent = false;
-  let tempImagePaths = [];
-  let tempDir = null;
+  return withProxyEnv('claude', async () => {
+    const { sessionId } = options;
+    let capturedSessionId = sessionId;
+    let sessionCreatedSent = false;
+    let tempImagePaths = [];
+    let tempDir = null;
 
-  try {
-    // Map CLI options to SDK format
-    const sdkOptions = mapCliOptionsToSDK(options);
+    try {
+      // Map CLI options to SDK format
+      const sdkOptions = mapCliOptionsToSDK(options);
 
-    // Load MCP configuration
-    const mcpServers = await loadMcpConfig(options.cwd);
-    if (mcpServers) {
-      sdkOptions.mcpServers = mcpServers;
-    }
-
-    // Handle images - save to temp files and modify prompt
-    const imageResult = await handleImages(command, options.images, options.cwd);
-    const finalCommand = imageResult.modifiedCommand;
-    tempImagePaths = imageResult.tempImagePaths;
-    tempDir = imageResult.tempDir;
-
-    // Create SDK query instance
-    const queryInstance = query({
-      prompt: finalCommand,
-      options: sdkOptions
-    });
-
-    // Track the query instance for abort capability
-    if (capturedSessionId) {
-      addSession(capturedSessionId, queryInstance, tempImagePaths, tempDir);
-    }
-
-    // Process streaming messages
-    console.log('Starting async generator loop for session:', capturedSessionId || 'NEW');
-    for await (const message of queryInstance) {
-      // Capture session ID from first message
-      if (message.session_id && !capturedSessionId) {
-
-        capturedSessionId = message.session_id;
-        addSession(capturedSessionId, queryInstance, tempImagePaths, tempDir);
-
-        // Set session ID on writer
-        if (ws.setSessionId && typeof ws.setSessionId === 'function') {
-          ws.setSessionId(capturedSessionId);
-        }
-
-        // Send session-created event only once for new sessions
-        if (!sessionId && !sessionCreatedSent) {
-          sessionCreatedSent = true;
-          ws.send(JSON.stringify({
-            type: 'session-created',
-            sessionId: capturedSessionId
-          }));
-        } else {
-          console.log('Not sending session-created. sessionId:', sessionId, 'sessionCreatedSent:', sessionCreatedSent);
-        }
-      } else {
-        console.log('No session_id in message or already captured. message.session_id:', message.session_id, 'capturedSessionId:', capturedSessionId);
+      // Load MCP configuration
+      const mcpServers = await loadMcpConfig(options.cwd);
+      if (mcpServers) {
+        sdkOptions.mcpServers = mcpServers;
       }
 
-      // Transform and send message to realtime stream
-      const transformedMessage = transformMessage(message);
+      // Handle images - save to temp files and modify prompt
+      const imageResult = await handleImages(command, options.images, options.cwd);
+      const finalCommand = imageResult.modifiedCommand;
+      tempImagePaths = imageResult.tempImagePaths;
+      tempDir = imageResult.tempDir;
+
+      // Create SDK query instance
+      const queryInstance = query({
+        prompt: finalCommand,
+        options: sdkOptions
+      });
+
+      // Track the query instance for abort capability
+      if (capturedSessionId) {
+        addSession(capturedSessionId, queryInstance, tempImagePaths, tempDir);
+      }
+
+      // Process streaming messages
+      console.log('Starting async generator loop for session:', capturedSessionId || 'NEW');
+      for await (const message of queryInstance) {
+        // Capture session ID from first message
+        if (message.session_id && !capturedSessionId) {
+
+          capturedSessionId = message.session_id;
+          addSession(capturedSessionId, queryInstance, tempImagePaths, tempDir);
+
+          // Set session ID on writer
+          if (ws.setSessionId && typeof ws.setSessionId === 'function') {
+            ws.setSessionId(capturedSessionId);
+          }
+
+          // Send session-created event only once for new sessions
+          if (!sessionId && !sessionCreatedSent) {
+            sessionCreatedSent = true;
+            ws.send(JSON.stringify({
+              type: 'session-created',
+              sessionId: capturedSessionId
+            }));
+          } else {
+            console.log('Not sending session-created. sessionId:', sessionId, 'sessionCreatedSent:', sessionCreatedSent);
+          }
+        } else {
+          console.log('No session_id in message or already captured. message.session_id:', message.session_id, 'capturedSessionId:', capturedSessionId);
+        }
+
+        // Transform and send message to realtime stream
+        const transformedMessage = transformMessage(message);
+        ws.send(JSON.stringify({
+          type: 'claude-response',
+          data: transformedMessage
+        }));
+
+        // Extract and send token budget updates from result messages
+        if (message.type === 'result') {
+          const tokenBudget = extractTokenBudget(message);
+          if (tokenBudget) {
+            console.log('Token budget from modelUsage:', tokenBudget);
+            ws.send(JSON.stringify({
+              type: 'token-budget',
+              data: tokenBudget
+            }));
+          }
+        }
+      }
+
+      // Clean up session on completion
+      if (capturedSessionId) {
+        removeSession(capturedSessionId);
+      }
+
+      // Clean up temporary image files
+      await cleanupTempFiles(tempImagePaths, tempDir);
+
+      // Send completion event
+      console.log('Streaming complete, sending claude-complete event');
       ws.send(JSON.stringify({
-        type: 'claude-response',
-        data: transformedMessage
+        type: 'claude-complete',
+        sessionId: capturedSessionId,
+        exitCode: 0,
+        isNewSession: !sessionId && !!command
+      }));
+      console.log('claude-complete event sent');
+
+    } catch (error) {
+      console.error('SDK query error:', error);
+
+      // Clean up session on error
+      if (capturedSessionId) {
+        removeSession(capturedSessionId);
+      }
+
+      // Clean up temporary image files on error
+      await cleanupTempFiles(tempImagePaths, tempDir);
+
+      // Send error to realtime stream
+      ws.send(JSON.stringify({
+        type: 'claude-error',
+        error: error.message
       }));
 
-      // Extract and send token budget updates from result messages
-      if (message.type === 'result') {
-        const tokenBudget = extractTokenBudget(message);
-        if (tokenBudget) {
-          console.log('Token budget from modelUsage:', tokenBudget);
-          ws.send(JSON.stringify({
-            type: 'token-budget',
-            data: tokenBudget
-          }));
-        }
-      }
+      throw error;
     }
-
-    // Clean up session on completion
-    if (capturedSessionId) {
-      removeSession(capturedSessionId);
-    }
-
-    // Clean up temporary image files
-    await cleanupTempFiles(tempImagePaths, tempDir);
-
-    // Send completion event
-    console.log('Streaming complete, sending claude-complete event');
-    ws.send(JSON.stringify({
-      type: 'claude-complete',
-      sessionId: capturedSessionId,
-      exitCode: 0,
-      isNewSession: !sessionId && !!command
-    }));
-    console.log('claude-complete event sent');
-
-  } catch (error) {
-    console.error('SDK query error:', error);
-
-    // Clean up session on error
-    if (capturedSessionId) {
-      removeSession(capturedSessionId);
-    }
-
-    // Clean up temporary image files on error
-    await cleanupTempFiles(tempImagePaths, tempDir);
-
-    // Send error to realtime stream
-    ws.send(JSON.stringify({
-      type: 'claude-error',
-      error: error.message
-    }));
-
-    throw error;
-  }
+  });
 }
 
 /**
