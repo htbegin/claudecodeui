@@ -16,6 +16,7 @@ import { query } from '@anthropic-ai/claude-agent-sdk';
 import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
+import { getProviderEnv } from './utils/proxy-env.js';
 
 // Session tracking: Map of session IDs to active query instances
 const activeSessions = new Map();
@@ -356,6 +357,8 @@ async function queryClaudeSDK(command, options = {}, ws) {
   try {
     // Map CLI options to SDK format
     const sdkOptions = mapCliOptionsToSDK(options);
+
+    sdkOptions.env = getProviderEnv('claude');
 
     // Load MCP configuration
     const mcpServers = await loadMcpConfig(options.cwd);

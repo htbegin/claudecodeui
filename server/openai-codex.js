@@ -14,6 +14,7 @@
  */
 
 import { Codex } from '@openai/codex-sdk';
+import { getProviderEnv } from './utils/proxy-env.js';
 
 // Track active sessions
 const activeCodexSessions = new Map();
@@ -206,7 +207,7 @@ export async function queryCodex(command, options = {}, ws) {
 
   try {
     // Initialize Codex SDK
-    codex = new Codex();
+    codex = new Codex({ env: getProviderEnv('codex') });
 
     // Thread options with sandbox and approval settings
     const threadOptions = {

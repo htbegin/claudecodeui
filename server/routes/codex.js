@@ -5,6 +5,7 @@ import path from 'path';
 import os from 'os';
 import TOML from '@iarna/toml';
 import { getCodexSessions, getCodexSessionMessages, deleteCodexSession } from '../projects.js';
+import { getProviderEnv } from '../utils/proxy-env.js';
 
 const router = express.Router();
 
@@ -88,7 +89,10 @@ router.delete('/sessions/:sessionId', async (req, res) => {
 
 router.get('/mcp/cli/list', async (req, res) => {
   try {
-    const proc = spawn('codex', ['mcp', 'list'], { stdio: ['pipe', 'pipe', 'pipe'] });
+    const proc = spawn('codex', ['mcp', 'list'], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: getProviderEnv('codex')
+    });
 
     let stdout = '';
     let stderr = '';
@@ -133,7 +137,10 @@ router.post('/mcp/cli/add', async (req, res) => {
       cliArgs.push(...args);
     }
 
-    const proc = spawn('codex', cliArgs, { stdio: ['pipe', 'pipe', 'pipe'] });
+    const proc = spawn('codex', cliArgs, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: getProviderEnv('codex')
+    });
 
     let stdout = '';
     let stderr = '';
@@ -161,7 +168,10 @@ router.delete('/mcp/cli/remove/:name', async (req, res) => {
   try {
     const { name } = req.params;
 
-    const proc = spawn('codex', ['mcp', 'remove', name], { stdio: ['pipe', 'pipe', 'pipe'] });
+    const proc = spawn('codex', ['mcp', 'remove', name], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: getProviderEnv('codex')
+    });
 
     let stdout = '';
     let stderr = '';
@@ -189,7 +199,10 @@ router.get('/mcp/cli/get/:name', async (req, res) => {
   try {
     const { name } = req.params;
 
-    const proc = spawn('codex', ['mcp', 'get', name], { stdio: ['pipe', 'pipe', 'pipe'] });
+    const proc = spawn('codex', ['mcp', 'get', name], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: getProviderEnv('codex')
+    });
 
     let stdout = '';
     let stderr = '';
