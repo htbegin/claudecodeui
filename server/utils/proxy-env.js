@@ -3,8 +3,6 @@ const proxyKeyMap = {
   codex: 'CODEX'
 };
 
-let proxyEnvQueue = Promise.resolve();
-
 function buildProxyEnv(prefix) {
   if (!prefix) {
     return {};
@@ -37,37 +35,4 @@ function buildProxyEnv(prefix) {
 export function getProxyEnv(provider) {
   const prefix = proxyKeyMap[provider];
   return buildProxyEnv(prefix);
-}
-
-export async function withProxyEnv(provider, callback) {
-  const envOverrides = getProxyEnv(provider);
-  const envKeys = Object.keys(envOverrides);
-
-  if (envKeys.length === 0) {
-    return callback();
-  }
-
-  const runWithEnv = async () => {
-    const previousValues = {};
-
-    for (const key of envKeys) {
-      previousValues[key] = process.env[key];
-      process.env[key] = envOverrides[key];
-    }
-
-    try {
-      return await callback();
-    } finally {
-      for (const key of envKeys) {
-        if (typeof previousValues[key] === 'undefined') {
-          delete process.env[key];
-        } else {
-          process.env[key] = previousValues[key];
-        }
-      }
-    }
-  };
-
-  proxyEnvQueue = proxyEnvQueue.then(runWithEnv, runWithEnv);
-  return proxyEnvQueue;
 }
