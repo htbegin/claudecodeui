@@ -17,6 +17,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
 import { CLAUDE_MODELS } from '../shared/modelConstants.js';
+import { buildProxyEnv } from './utils/proxyEnv.js';
 
 // Session tracking: Map of session IDs to active query instances
 const activeSessions = new Map();
@@ -86,6 +87,11 @@ function mapCliOptionsToSDK(options = {}) {
     type: 'preset',
     preset: 'claude_code'  // Required to use CLAUDE.md
   };
+
+  const proxyEnv = buildProxyEnv('CLAUDE');
+  if (Object.keys(proxyEnv).length > 0) {
+    sdkOptions.env = { ...process.env, ...proxyEnv };
+  }
 
   // Map setting sources for CLAUDE.md loading
   // This loads CLAUDE.md from project, user (~/.config/claude/CLAUDE.md), and local directories
