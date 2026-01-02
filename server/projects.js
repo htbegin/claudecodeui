@@ -1244,6 +1244,43 @@ async function parseCodexSessionFile(filePath) {
       crlfDelay: Infinity
     });
 
+    const extractTextFromContent = (content) => {
+      if (!content) return null;
+      if (typeof content === 'string') return content;
+      if (Array.isArray(content)) {
+        const textPart = content.find(part => typeof part?.text === 'string' && part.text.trim());
+        return textPart?.text || null;
+      }
+      if (typeof content?.text === 'string') return content.text;
+      return null;
+    };
+
+    const extractUserMessage = (entry) => {
+      const payload = entry?.payload;
+      if (!payload) return null;
+
+      if (entry.type === 'event_msg') {
+        const isUser =
+          payload.type === 'user_message' ||
+          payload.type === 'input' ||
+          payload.type === 'message' ||
+          payload.role === 'user';
+        if (isUser) {
+          return payload.text || extractTextFromContent(payload.content) || payload.message?.content || null;
+        }
+      }
+
+      if (entry.type === 'response_item' && payload?.type === 'message' && payload?.role === 'user') {
+        return extractTextFromContent(payload.content);
+      }
+
+      if (entry.type === 'user_message') {
+        return payload.text || extractTextFromContent(payload.content) || null;
+      }
+
+      return null;
+    };
+
     let sessionMeta = null;
     let lastTimestamp = null;
     let lastUserMessage = null;
@@ -1271,11 +1308,10 @@ async function parseCodexSessionFile(filePath) {
           }
 
           // Count messages and extract user messages for summary
-          if (entry.type === 'event_msg' && entry.payload?.type === 'user_message') {
+          const userMessage = extractUserMessage(entry);
+          if (userMessage) {
             messageCount++;
-            if (entry.payload.text) {
-              lastUserMessage = entry.payload.text;
-            }
+            lastUserMessage = userMessage;
           }
 
           if (entry.type === 'response_item' && entry.payload?.type === 'message') {

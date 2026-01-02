@@ -325,7 +325,7 @@ function Sidebar({
         console.log('[Sidebar] Session deleted successfully, calling callback');
         // Call parent callback if provided
         if (onSessionDelete) {
-          onSessionDelete(sessionId);
+          onSessionDelete(sessionId, provider);
         } else {
           console.warn('[Sidebar] No onSessionDelete callback provided');
         }

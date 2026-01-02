@@ -145,8 +145,19 @@ function AppContent() {
     }
 
     // Find the selected session in both current and updated project data
-    const currentSelectedSession = currentSelectedProject.sessions?.find(s => s.id === selectedSession.id);
-    const updatedSelectedSession = updatedSelectedProject.sessions?.find(s => s.id === selectedSession.id);
+    const currentAllSessions = [
+      ...(currentSelectedProject.sessions || []),
+      ...(currentSelectedProject.codexSessions || []),
+      ...(currentSelectedProject.cursorSessions || [])
+    ];
+    const updatedAllSessions = [
+      ...(updatedSelectedProject.sessions || []),
+      ...(updatedSelectedProject.codexSessions || []),
+      ...(updatedSelectedProject.cursorSessions || [])
+    ];
+
+    const currentSelectedSession = currentAllSessions.find(s => s.id === selectedSession.id);
+    const updatedSelectedSession = updatedAllSessions.find(s => s.id === selectedSession.id);
 
     if (!currentSelectedSession || !updatedSelectedSession) {
       // Selected session was deleted or significantly changed, not purely additive
@@ -155,11 +166,27 @@ function AppContent() {
 
     // Check if the selected session's content has changed (modification vs addition)
     // Compare key fields that would affect the loaded chat interface
-    const sessionUnchanged = 
-      currentSelectedSession.id === updatedSelectedSession.id &&
-      currentSelectedSession.title === updatedSelectedSession.title &&
-      currentSelectedSession.created_at === updatedSelectedSession.created_at &&
-      currentSelectedSession.updated_at === updatedSelectedSession.updated_at;
+    const sessionProvider = selectedSession.__provider || 'claude';
+    let sessionUnchanged = false;
+
+    if (sessionProvider === 'codex') {
+      sessionUnchanged =
+        currentSelectedSession.id === updatedSelectedSession.id &&
+        currentSelectedSession.summary === updatedSelectedSession.summary &&
+        currentSelectedSession.lastActivity === updatedSelectedSession.lastActivity &&
+        currentSelectedSession.messageCount === updatedSelectedSession.messageCount;
+    } else if (sessionProvider === 'cursor') {
+      sessionUnchanged =
+        currentSelectedSession.id === updatedSelectedSession.id &&
+        currentSelectedSession.name === updatedSelectedSession.name &&
+        currentSelectedSession.createdAt === updatedSelectedSession.createdAt;
+    } else {
+      sessionUnchanged =
+        currentSelectedSession.id === updatedSelectedSession.id &&
+        currentSelectedSession.title === updatedSelectedSession.title &&
+        currentSelectedSession.created_at === updatedSelectedSession.created_at &&
+        currentSelectedSession.updated_at === updatedSelectedSession.updated_at;
+    }
 
     // This is considered additive if the selected session is unchanged
     // (new sessions may have been added elsewhere, but active session is protected)
@@ -293,7 +320,8 @@ function AppContent() {
             newProject.fullPath !== prevProject.fullPath ||
             JSON.stringify(newProject.sessionMeta) !== JSON.stringify(prevProject.sessionMeta) ||
             JSON.stringify(newProject.sessions) !== JSON.stringify(prevProject.sessions) ||
-            JSON.stringify(newProject.cursorSessions) !== JSON.stringify(prevProject.cursorSessions)
+            JSON.stringify(newProject.cursorSessions) !== JSON.stringify(prevProject.cursorSessions) ||
+            JSON.stringify(newProject.codexSessions) !== JSON.stringify(prevProject.codexSessions)
           );
         }) || data.length !== prevProjects.length;
         
@@ -340,6 +368,16 @@ function AppContent() {
         if (cSession) {
           setSelectedProject(project);
           setSelectedSession({ ...cSession, __provider: 'cursor' });
+          if (shouldSwitchTab) {
+            setActiveTab('chat');
+          }
+          return;
+        }
+        // Also check Codex sessions
+        const codexSession = project.codexSessions?.find(s => s.id === sessionId);
+        if (codexSession) {
+          setSelectedProject(project);
+          setSelectedSession({ ...codexSession, __provider: 'codex' });
           if (shouldSwitchTab) {
             setActiveTab('chat');
           }
@@ -402,7 +440,7 @@ function AppContent() {
     }
   };
 
-  const handleSessionDelete = (sessionId) => {
+  const handleSessionDelete = (sessionId, provider = 'claude') => {
     // If the deleted session was currently selected, clear it
     if (selectedSession?.id === sessionId) {
       setSelectedSession(null);
@@ -413,11 +451,21 @@ function AppContent() {
     setProjects(prevProjects => 
       prevProjects.map(project => ({
         ...project,
-        sessions: project.sessions?.filter(session => session.id !== sessionId) || [],
-        sessionMeta: {
-          ...project.sessionMeta,
-          total: Math.max(0, (project.sessionMeta?.total || 0) - 1)
-        }
+        sessions: provider === 'claude'
+          ? (project.sessions?.filter(session => session.id !== sessionId) || [])
+          : project.sessions,
+        codexSessions: provider === 'codex'
+          ? (project.codexSessions?.filter(session => session.id !== sessionId) || [])
+          : project.codexSessions,
+        cursorSessions: provider === 'cursor'
+          ? (project.cursorSessions?.filter(session => session.id !== sessionId) || [])
+          : project.cursorSessions,
+        sessionMeta: provider === 'claude'
+          ? {
+              ...project.sessionMeta,
+              total: Math.max(0, (project.sessionMeta?.total || 0) - 1)
+            }
+          : project.sessionMeta
       }))
     );
   };
@@ -442,7 +490,8 @@ function AppContent() {
             newProject.displayName !== prevProject.displayName ||
             newProject.fullPath !== prevProject.fullPath ||
             JSON.stringify(newProject.sessionMeta) !== JSON.stringify(prevProject.sessionMeta) ||
-            JSON.stringify(newProject.sessions) !== JSON.stringify(prevProject.sessions)
+            JSON.stringify(newProject.sessions) !== JSON.stringify(prevProject.sessions) ||
+            JSON.stringify(newProject.codexSessions) !== JSON.stringify(prevProject.codexSessions)
           );
         }) || freshProjects.length !== prevProjects.length;
         
@@ -460,7 +509,12 @@ function AppContent() {
           
           // If we have a selected session, try to find it in the refreshed project
           if (selectedSession) {
-            const refreshedSession = refreshedProject.sessions?.find(s => s.id === selectedSession.id);
+            const refreshedSessions = [
+              ...(refreshedProject.sessions || []),
+              ...(refreshedProject.codexSessions || []),
+              ...(refreshedProject.cursorSessions || [])
+            ];
+            const refreshedSession = refreshedSessions.find(s => s.id === selectedSession.id);
             if (refreshedSession && JSON.stringify(refreshedSession) !== JSON.stringify(selectedSession)) {
               setSelectedSession(refreshedSession);
             }

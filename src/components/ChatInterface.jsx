@@ -3536,6 +3536,10 @@ function ChatInterface({ selectedProject, selectedSession, sendMessage, messages
             console.log('Codex session complete, ID set to:', codexPendingSessionId);
           }
 
+          if (window.refreshProjects) {
+            setTimeout(() => window.refreshProjects(), 500);
+          }
+
           if (selectedProject) {
             safeLocalStorage.removeItem(`chat_messages_${selectedProject.name}`);
           }
