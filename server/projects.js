@@ -1255,6 +1255,14 @@ async function parseCodexSessionFile(filePath) {
       return null;
     };
 
+    const shouldIgnoreUserMessage = (text) => {
+      if (!text) return true;
+      const trimmed = text.trim();
+      return trimmed.startsWith('<environment_context>') ||
+        trimmed.includes('</environment_context>') ||
+        trimmed.includes('<cwd>');
+    };
+
     const extractUserMessage = (entry) => {
       const payload = entry?.payload;
       if (!payload) return null;
@@ -1265,19 +1273,22 @@ async function parseCodexSessionFile(filePath) {
           payload.type === 'input' ||
           payload.role === 'user';
         if (isUser) {
-          return payload.text ||
+          const candidate = payload.text ||
             extractTextFromContent(payload.content) ||
             extractTextFromContent(payload.message?.content) ||
             null;
+          return shouldIgnoreUserMessage(candidate) ? null : candidate;
         }
       }
 
       if (entry.type === 'response_item' && payload?.type === 'message' && payload?.role === 'user') {
-        return extractTextFromContent(payload.content);
+        const candidate = extractTextFromContent(payload.content);
+        return shouldIgnoreUserMessage(candidate) ? null : candidate;
       }
 
       if (entry.type === 'user_message') {
-        return payload.text || extractTextFromContent(payload.content) || null;
+        const candidate = payload.text || extractTextFromContent(payload.content) || null;
+        return shouldIgnoreUserMessage(candidate) ? null : candidate;
       }
 
       return null;
@@ -1285,7 +1296,7 @@ async function parseCodexSessionFile(filePath) {
 
     let sessionMeta = null;
     let lastTimestamp = null;
-    let lastUserMessage = null;
+    let firstUserMessage = null;
     let messageCount = 0;
 
     for await (const line of rl) {
@@ -1313,7 +1324,9 @@ async function parseCodexSessionFile(filePath) {
           const userMessage = extractUserMessage(entry);
           if (userMessage) {
             messageCount++;
-            lastUserMessage = userMessage;
+            if (!firstUserMessage) {
+              firstUserMessage = userMessage;
+            }
           }
 
           if (entry.type === 'response_item' && entry.payload?.type === 'message') {
@@ -1330,8 +1343,8 @@ async function parseCodexSessionFile(filePath) {
       return {
         ...sessionMeta,
         timestamp: lastTimestamp || sessionMeta.timestamp,
-        summary: lastUserMessage ?
-          (lastUserMessage.length > 50 ? lastUserMessage.substring(0, 50) + '...' : lastUserMessage) :
+        summary: firstUserMessage ?
+          (firstUserMessage.length > 50 ? firstUserMessage.substring(0, 50) + '...' : firstUserMessage) :
           'Codex Session',
         messageCount
       };
