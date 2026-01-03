@@ -1263,10 +1263,12 @@ async function parseCodexSessionFile(filePath) {
         const isUser =
           payload.type === 'user_message' ||
           payload.type === 'input' ||
-          payload.type === 'message' ||
           payload.role === 'user';
         if (isUser) {
-          return payload.text || extractTextFromContent(payload.content) || payload.message?.content || null;
+          return payload.text ||
+            extractTextFromContent(payload.content) ||
+            extractTextFromContent(payload.message?.content) ||
+            null;
         }
       }
 
