@@ -365,7 +365,8 @@ const MessageComponent = memo(({ message, index, prevMessage, createDiff, onFile
   const messageRef = React.useRef(null);
   const [isExpanded, setIsExpanded] = React.useState(false);
   React.useEffect(() => {
-    if (!autoExpandTools || !messageRef.current || !message.isToolUse) return;
+    const node = messageRef.current;
+    if (!autoExpandTools || !node || !message.isToolUse) return;
     
     const observer = new IntersectionObserver(
       (entries) => {
@@ -373,6 +374,9 @@ const MessageComponent = memo(({ message, index, prevMessage, createDiff, onFile
           if (entry.isIntersecting && !isExpanded) {
             setIsExpanded(true);
             // Find all details elements and open them
+            if (!messageRef.current) {
+              return;
+            }
             const details = messageRef.current.querySelectorAll('details');
             details.forEach(detail => {
               detail.open = true;
@@ -383,12 +387,10 @@ const MessageComponent = memo(({ message, index, prevMessage, createDiff, onFile
       { threshold: 0.1 }
     );
     
-    observer.observe(messageRef.current);
+    observer.observe(node);
     
     return () => {
-      if (messageRef.current) {
-        observer.unobserve(messageRef.current);
-      }
+      observer.disconnect();
     };
   }, [autoExpandTools, isExpanded, message.isToolUse]);
 
@@ -2746,17 +2748,22 @@ function ChatInterface({ selectedProject, selectedSession, sendMessage, messages
     }
   }, [isNearBottom, hasMoreMessages, isLoadingMoreMessages, selectedSession, selectedProject, loadSessionMessages]);
 
+  const selectedProjectName = selectedProject?.name || null;
+  const selectedProjectPath = selectedProject?.fullPath || selectedProject?.path || null;
+  const selectedSessionId = selectedSession?.id || null;
+  const selectedSessionProvider = selectedSession?.__provider || null;
+
   useEffect(() => {
     // Load session messages when session changes
     const loadMessages = async () => {
-      if (selectedSession && selectedProject) {
+      if (selectedSessionId && selectedProjectName) {
         const provider = localStorage.getItem('selected-provider') || 'claude';
 
         // Mark that we're loading a session to prevent multiple scroll triggers
         isLoadingSessionRef.current = true;
 
         // Only reset state if the session ID actually changed (not initial load)
-        const sessionChanged = currentSessionId !== null && currentSessionId !== selectedSession.id;
+        const sessionChanged = currentSessionId !== null && currentSessionId !== selectedSessionId;
 
         if (sessionChanged) {
           // Reset pagination state when switching sessions
@@ -2774,7 +2781,7 @@ function ChatInterface({ selectedProject, selectedSession, sendMessage, messages
           if (sendMessage) {
             sendMessage({
               type: 'check-session-status',
-              sessionId: selectedSession.id,
+              sessionId: selectedSessionId,
               provider
             });
           }
@@ -2788,7 +2795,7 @@ function ChatInterface({ selectedProject, selectedSession, sendMessage, messages
           if (sendMessage) {
             sendMessage({
               type: 'check-session-status',
-              sessionId: selectedSession.id,
+              sessionId: selectedSessionId,
               provider
             });
           }
@@ -2796,29 +2803,32 @@ function ChatInterface({ selectedProject, selectedSession, sendMessage, messages
         
         if (provider === 'cursor') {
           // For Cursor, set the session ID for resuming
-          setCurrentSessionId(selectedSession.id);
-          sessionStorage.setItem('cursorSessionId', selectedSession.id);
+          setCurrentSessionId(selectedSessionId);
+          sessionStorage.setItem('cursorSessionId', selectedSessionId);
           
           // Only load messages from SQLite if this is NOT a system-initiated session change
           // For system-initiated changes, preserve existing messages
           if (!isSystemSessionChange) {
             // Load historical messages for Cursor session from SQLite
-            const projectPath = selectedProject.fullPath || selectedProject.path;
-            const converted = await loadCursorSessionMessages(projectPath, selectedSession.id);
-            setSessionMessages([]);
-            setChatMessages(converted);
+            if (selectedProjectPath) {
+              const converted = await loadCursorSessionMessages(selectedProjectPath, selectedSessionId);
+              setSessionMessages([]);
+              setChatMessages(converted);
+            } else {
+              setIsLoading(false);
+            }
           } else {
             // Reset the flag after handling system session change
             setIsSystemSessionChange(false);
           }
         } else {
           // For Claude, load messages normally with pagination
-          setCurrentSessionId(selectedSession.id);
+          setCurrentSessionId(selectedSessionId);
           
           // Only load messages from API if this is a user-initiated session change
           // For system-initiated changes, preserve existing messages and rely on realtime updates
           if (!isSystemSessionChange) {
-            const messages = await loadSessionMessages(selectedProject.name, selectedSession.id, false, selectedSession.__provider || 'claude');
+            const messages = await loadSessionMessages(selectedProjectName, selectedSessionId, false, selectedSessionProvider || 'claude');
             setSessionMessages(messages);
             // convertedMessages will be automatically updated via useMemo
             // Scroll will be handled by the main scroll useEffect after messages are rendered
@@ -2849,7 +2859,15 @@ function ChatInterface({ selectedProject, selectedSession, sendMessage, messages
     };
 
     loadMessages();
-  }, [selectedSession, selectedProject, loadCursorSessionMessages, scrollToBottom, isSystemSessionChange]);
+  }, [
+    selectedSessionId,
+    selectedSessionProvider,
+    selectedProjectName,
+    selectedProjectPath,
+    loadCursorSessionMessages,
+    scrollToBottom,
+    isSystemSessionChange
+  ]);
 
   // External Message Update Handler: Reload messages when external CLI modifies current session
   // This triggers when App.jsx detects a JSONL file change for the currently-viewed session
@@ -3536,7 +3554,7 @@ function ChatInterface({ selectedProject, selectedSession, sendMessage, messages
             console.log('Codex session complete, ID set to:', codexPendingSessionId);
           }
 
-          if (window.refreshProjects) {
+          if (codexPendingSessionId && !currentSessionId && window.refreshProjects) {
             setTimeout(() => window.refreshProjects(), 500);
           }
 
