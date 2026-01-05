@@ -21,7 +21,7 @@ import { dirname } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// ANSI color codes for console output
+// ANSI color codes for terminal output
 const colors = {
     reset: '\x1b[0m',
     bright: '\x1b[1m',

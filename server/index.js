@@ -8,7 +8,7 @@ import { dirname } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// ANSI color codes for console output
+// ANSI color codes for terminal output
 const colors = {
     reset: '\x1b[0m',
     bright: '\x1b[1m',
@@ -47,11 +47,13 @@ try {
 console.log('PORT from env:', process.env.PORT);
 
 import express from 'express';
+import { WebSocketServer, WebSocket } from 'ws';
 import os from 'os';
 import http from 'http';
 import cors from 'cors';
 import { promises as fsPromises } from 'fs';
 import { spawn } from 'child_process';
+import pty from 'node-pty';
 import fetch from 'node-fetch';
 import mime from 'mime-types';
 
@@ -73,11 +75,11 @@ import cliAuthRoutes from './routes/cli-auth.js';
 import userRoutes from './routes/user.js';
 import codexRoutes from './routes/codex.js';
 import { initializeDatabase } from './database/db.js';
-import { validateApiKey, authenticateToken } from './middleware/auth.js';
-import { registerSseClient, removeSseClient, getSseClient, broadcastSseMessage } from './utils/sse.js';
+import { validateApiKey, authenticateToken, authenticateWebSocket } from './middleware/auth.js';
 
 // File system watcher for projects folder
 let projectsWatcher = null;
+const connectedClients = new Set();
 
 // Setup file system watcher for Claude projects folder using chokidar
 async function setupProjectsWatcher() {
@@ -124,12 +126,18 @@ async function setupProjectsWatcher() {
                     const updatedProjects = await getProjects();
 
                     // Notify all connected clients about the project changes
-                    broadcastSseMessage({
+                    const updateMessage = JSON.stringify({
                         type: 'projects_updated',
                         projects: updatedProjects,
                         timestamp: new Date().toISOString(),
                         changeType: eventType,
                         changedFile: path.relative(claudeProjectsPath, filePath)
+                    });
+
+                    connectedClients.forEach(client => {
+                        if (client.readyState === WebSocket.OPEN) {
+                            client.send(updateMessage);
+                        }
                     });
 
                 } catch (error) {
@@ -160,6 +168,49 @@ async function setupProjectsWatcher() {
 const app = express();
 const server = http.createServer(app);
 
+const ptySessionsMap = new Map();
+const PTY_SESSION_TIMEOUT = 30 * 60 * 1000;
+
+// Single WebSocket server that handles both paths
+const wss = new WebSocketServer({
+    server,
+    verifyClient: (info) => {
+        console.log('WebSocket connection attempt to:', info.req.url);
+
+        // Platform mode: always allow connection
+        if (process.env.VITE_IS_PLATFORM === 'true') {
+            const user = authenticateWebSocket(null); // Will return first user
+            if (!user) {
+                console.log('[WARN] Platform mode: No user found in database');
+                return false;
+            }
+            info.req.user = user;
+            console.log('[OK] Platform mode WebSocket authenticated for user:', user.username);
+            return true;
+        }
+
+        // Normal mode: verify token
+        // Extract token from query parameters or headers
+        const url = new URL(info.req.url, 'http://localhost');
+        const token = url.searchParams.get('token') ||
+            info.req.headers.authorization?.split(' ')[1];
+
+        // Verify token
+        const user = authenticateWebSocket(token);
+        if (!user) {
+            console.log('[WARN] WebSocket authentication failed');
+            return false;
+        }
+
+        // Store user info in the request for later use
+        info.req.user = user;
+        console.log('[OK] WebSocket authenticated for user:', user.username);
+        return true;
+    }
+});
+
+// Make WebSocket server available to routes
+app.locals.wss = wss;
 
 app.use(cors());
 app.use(express.json({
@@ -225,193 +276,6 @@ app.use('/api/codex', authenticateToken, codexRoutes);
 // Agent API Routes (uses API key authentication)
 app.use('/api/agent', agentRoutes);
 
-// Realtime SSE stream for UI updates
-app.get('/api/realtime/stream', authenticateToken, (req, res) => {
-    const { clientId } = req.query;
-    if (!clientId) {
-        return res.status(400).json({ error: 'clientId is required' });
-    }
-
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.setHeader('X-Accel-Buffering', 'no');
-    res.flushHeaders?.();
-
-    const client = registerSseClient(clientId, res);
-    client.send({
-        type: 'realtime-connected',
-        clientId,
-        timestamp: new Date().toISOString()
-    });
-
-    const keepAlive = setInterval(() => {
-        if (!res.writableEnded) {
-            res.write(': keep-alive\n\n');
-        }
-    }, 20000);
-
-    req.on('close', () => {
-        clearInterval(keepAlive);
-        removeSseClient(clientId);
-    });
-});
-
-// Realtime command endpoint (HTTP -> SSE)
-app.post('/api/realtime/command', authenticateToken, async (req, res) => {
-    const { clientId, ...message } = req.body || {};
-    if (!clientId) {
-        return res.status(400).json({ error: 'clientId is required' });
-    }
-
-    const client = getSseClient(clientId);
-    if (!client) {
-        return res.status(409).json({ error: 'No active SSE connection for clientId' });
-    }
-
-    const { type } = message;
-
-    try {
-        if (type === 'claude-command') {
-            void (async () => {
-                try {
-                    await queryClaudeSDK(message.command, message.options, client);
-                } catch (error) {
-                    client.send({
-                        type: 'claude-error',
-                        error: error.message
-                    });
-                }
-            })();
-            return res.status(202).json({ success: true });
-        }
-
-        if (type === 'cursor-command') {
-            void (async () => {
-                try {
-                    await spawnCursor(message.command, message.options, client);
-                } catch (error) {
-                    client.send({
-                        type: 'cursor-error',
-                        error: error.message
-                    });
-                }
-            })();
-            return res.status(202).json({ success: true });
-        }
-
-        if (type === 'codex-command') {
-            void (async () => {
-                try {
-                    await queryCodex(message.command, message.options, client);
-                } catch (error) {
-                    client.send({
-                        type: 'codex-error',
-                        error: error.message
-                    });
-                }
-            })();
-            return res.status(202).json({ success: true });
-        }
-
-        if (type === 'cursor-resume') {
-            void (async () => {
-                try {
-                    await spawnCursor('', {
-                        sessionId: message.sessionId,
-                        resume: true,
-                        cwd: message.options?.cwd
-                    }, client);
-                } catch (error) {
-                    client.send({
-                        type: 'cursor-error',
-                        error: error.message
-                    });
-                }
-            })();
-            return res.status(202).json({ success: true });
-        }
-
-        if (type === 'abort-session') {
-            const provider = message.provider || 'claude';
-            let success;
-
-            if (provider === 'cursor') {
-                success = abortCursorSession(message.sessionId);
-            } else if (provider === 'codex') {
-                success = abortCodexSession(message.sessionId);
-            } else {
-                success = await abortClaudeSDKSession(message.sessionId);
-            }
-
-            client.send({
-                type: 'session-aborted',
-                sessionId: message.sessionId,
-                provider,
-                success
-            });
-
-            return res.json({ success: true });
-        }
-
-        if (type === 'cursor-abort') {
-            const success = abortCursorSession(message.sessionId);
-            client.send({
-                type: 'session-aborted',
-                sessionId: message.sessionId,
-                provider: 'cursor',
-                success
-            });
-            return res.json({ success: true });
-        }
-
-        if (type === 'check-session-status') {
-            const provider = message.provider || 'claude';
-            const sessionId = message.sessionId;
-            let isActive;
-
-            if (provider === 'cursor') {
-                isActive = isCursorSessionActive(sessionId);
-            } else if (provider === 'codex') {
-                isActive = isCodexSessionActive(sessionId);
-            } else {
-                isActive = isClaudeSDKSessionActive(sessionId);
-            }
-
-            client.send({
-                type: 'session-status',
-                sessionId,
-                provider,
-                isProcessing: isActive
-            });
-
-            return res.json({ success: true });
-        }
-
-        if (type === 'get-active-sessions') {
-            const activeSessions = {
-                claude: getActiveClaudeSDKSessions(),
-                cursor: getActiveCursorSessions(),
-                codex: getActiveCodexSessions()
-            };
-            client.send({
-                type: 'active-sessions',
-                sessions: activeSessions
-            });
-            return res.json({ success: true });
-        }
-
-        return res.status(400).json({ error: 'Unsupported realtime command type' });
-    } catch (error) {
-        console.error('[ERROR] Realtime command error:', error.message);
-        client.send({
-            type: 'error',
-            error: error.message
-        });
-        return res.status(500).json({ error: error.message });
-    }
-});
-
 // Serve public files (like api-docs.html)
 app.use(express.static(path.join(__dirname, '../public')));
 
@@ -433,7 +297,7 @@ app.use(express.static(path.join(__dirname, '../dist'), {
 
 // API Routes (protected)
 // /api/config endpoint removed - no longer needed
-// Frontend uses SSE for realtime updates
+// Frontend now uses window.location for WebSocket URLs
 
 // System update endpoint
 app.post('/api/system/update', authenticateToken, async (req, res) => {
@@ -834,6 +698,479 @@ app.get('/api/projects/:projectName/files', authenticateToken, async (req, res) 
     }
 });
 
+// WebSocket connection handler that routes based on URL path
+wss.on('connection', (ws, request) => {
+    const url = request.url;
+    console.log('[INFO] Client connected to:', url);
+
+    // Parse URL to get pathname without query parameters
+    const urlObj = new URL(url, 'http://localhost');
+    const pathname = urlObj.pathname;
+
+    if (pathname === '/shell') {
+        handleShellConnection(ws);
+    } else if (pathname === '/ws') {
+        handleChatConnection(ws);
+    } else {
+        console.log('[WARN] Unknown WebSocket path:', pathname);
+        ws.close();
+    }
+});
+
+/**
+ * WebSocket Writer - Wrapper for WebSocket to match SSEStreamWriter interface
+ */
+class WebSocketWriter {
+  constructor(ws) {
+    this.ws = ws;
+    this.sessionId = null;
+    this.isWebSocketWriter = true;  // Marker for transport detection
+  }
+
+  send(data) {
+    if (this.ws.readyState === 1) { // WebSocket.OPEN
+      // Providers send raw objects, we stringify for WebSocket
+      this.ws.send(JSON.stringify(data));
+    }
+  }
+
+  setSessionId(sessionId) {
+    this.sessionId = sessionId;
+  }
+
+  getSessionId() {
+    return this.sessionId;
+  }
+}
+
+// Handle chat WebSocket connections
+function handleChatConnection(ws) {
+    console.log('[INFO] Chat WebSocket connected');
+
+    // Add to connected clients for project updates
+    connectedClients.add(ws);
+
+    // Wrap WebSocket with writer for consistent interface with SSEStreamWriter
+    const writer = new WebSocketWriter(ws);
+
+    ws.on('message', async (message) => {
+        try {
+            const data = JSON.parse(message);
+
+            if (data.type === 'claude-command') {
+                console.log('[DEBUG] User message:', data.command || '[Continue/Resume]');
+                console.log('📁 Project:', data.options?.projectPath || 'Unknown');
+                console.log('🔄 Session:', data.options?.sessionId ? 'Resume' : 'New');
+
+                // Use Claude Agents SDK
+                await queryClaudeSDK(data.command, data.options, writer);
+            } else if (data.type === 'cursor-command') {
+                console.log('[DEBUG] Cursor message:', data.command || '[Continue/Resume]');
+                console.log('📁 Project:', data.options?.cwd || 'Unknown');
+                console.log('🔄 Session:', data.options?.sessionId ? 'Resume' : 'New');
+                console.log('🤖 Model:', data.options?.model || 'default');
+                await spawnCursor(data.command, data.options, writer);
+            } else if (data.type === 'codex-command') {
+                console.log('[DEBUG] Codex message:', data.command || '[Continue/Resume]');
+                console.log('📁 Project:', data.options?.projectPath || data.options?.cwd || 'Unknown');
+                console.log('🔄 Session:', data.options?.sessionId ? 'Resume' : 'New');
+                console.log('🤖 Model:', data.options?.model || 'default');
+                await queryCodex(data.command, data.options, writer);
+            } else if (data.type === 'cursor-resume') {
+                // Backward compatibility: treat as cursor-command with resume and no prompt
+                console.log('[DEBUG] Cursor resume session (compat):', data.sessionId);
+                await spawnCursor('', {
+                    sessionId: data.sessionId,
+                    resume: true,
+                    cwd: data.options?.cwd
+                }, writer);
+            } else if (data.type === 'abort-session') {
+                console.log('[DEBUG] Abort session request:', data.sessionId);
+                const provider = data.provider || 'claude';
+                let success;
+
+                if (provider === 'cursor') {
+                    success = abortCursorSession(data.sessionId);
+                } else if (provider === 'codex') {
+                    success = abortCodexSession(data.sessionId);
+                } else {
+                    // Use Claude Agents SDK
+                    success = await abortClaudeSDKSession(data.sessionId);
+                }
+
+                writer.send({
+                    type: 'session-aborted',
+                    sessionId: data.sessionId,
+                    provider,
+                    success
+                });
+            } else if (data.type === 'cursor-abort') {
+                console.log('[DEBUG] Abort Cursor session:', data.sessionId);
+                const success = abortCursorSession(data.sessionId);
+                writer.send({
+                    type: 'session-aborted',
+                    sessionId: data.sessionId,
+                    provider: 'cursor',
+                    success
+                });
+            } else if (data.type === 'check-session-status') {
+                // Check if a specific session is currently processing
+                const provider = data.provider || 'claude';
+                const sessionId = data.sessionId;
+                let isActive;
+
+                if (provider === 'cursor') {
+                    isActive = isCursorSessionActive(sessionId);
+                } else if (provider === 'codex') {
+                    isActive = isCodexSessionActive(sessionId);
+                } else {
+                    // Use Claude Agents SDK
+                    isActive = isClaudeSDKSessionActive(sessionId);
+                }
+
+                writer.send({
+                    type: 'session-status',
+                    sessionId,
+                    provider,
+                    isProcessing: isActive
+                });
+            } else if (data.type === 'get-active-sessions') {
+                // Get all currently active sessions
+                const activeSessions = {
+                    claude: getActiveClaudeSDKSessions(),
+                    cursor: getActiveCursorSessions(),
+                    codex: getActiveCodexSessions()
+                };
+                writer.send({
+                    type: 'active-sessions',
+                    sessions: activeSessions
+                });
+            }
+        } catch (error) {
+            console.error('[ERROR] Chat WebSocket error:', error.message);
+            writer.send({
+                type: 'error',
+                error: error.message
+            });
+        }
+    });
+
+    ws.on('close', () => {
+        console.log('🔌 Chat client disconnected');
+        // Remove from connected clients
+        connectedClients.delete(ws);
+    });
+}
+
+// Handle shell WebSocket connections
+function handleShellConnection(ws) {
+    console.log('🐚 Shell client connected');
+    let shellProcess = null;
+    let ptySessionKey = null;
+    let outputBuffer = [];
+
+    ws.on('message', async (message) => {
+        try {
+            const data = JSON.parse(message);
+            console.log('📨 Shell message received:', data.type);
+
+            if (data.type === 'init') {
+                const projectPath = data.projectPath || process.cwd();
+                const sessionId = data.sessionId;
+                const hasSession = data.hasSession;
+                const provider = data.provider || 'claude';
+                const initialCommand = data.initialCommand;
+                const isPlainShell = data.isPlainShell || (!!initialCommand && !hasSession) || provider === 'plain-shell';
+
+                // Login commands (Claude/Cursor auth) should never reuse cached sessions
+                const isLoginCommand = initialCommand && (
+                    initialCommand.includes('setup-token') ||
+                    initialCommand.includes('cursor-agent login') ||
+                    initialCommand.includes('auth login')
+                );
+
+                // Include command hash in session key so different commands get separate sessions
+                const commandSuffix = isPlainShell && initialCommand
+                    ? `_cmd_${Buffer.from(initialCommand).toString('base64').slice(0, 16)}`
+                    : '';
+                ptySessionKey = `${projectPath}_${sessionId || 'default'}${commandSuffix}`;
+
+                // Kill any existing login session before starting fresh
+                if (isLoginCommand) {
+                    const oldSession = ptySessionsMap.get(ptySessionKey);
+                    if (oldSession) {
+                        console.log('🧹 Cleaning up existing login session:', ptySessionKey);
+                        if (oldSession.timeoutId) clearTimeout(oldSession.timeoutId);
+                        if (oldSession.pty && oldSession.pty.kill) oldSession.pty.kill();
+                        ptySessionsMap.delete(ptySessionKey);
+                    }
+                }
+
+                const existingSession = isLoginCommand ? null : ptySessionsMap.get(ptySessionKey);
+                if (existingSession) {
+                    console.log('♻️  Reconnecting to existing PTY session:', ptySessionKey);
+                    shellProcess = existingSession.pty;
+
+                    clearTimeout(existingSession.timeoutId);
+
+                    ws.send(JSON.stringify({
+                        type: 'output',
+                        data: `\x1b[36m[Reconnected to existing session]\x1b[0m\r\n`
+                    }));
+
+                    if (existingSession.buffer && existingSession.buffer.length > 0) {
+                        console.log(`📜 Sending ${existingSession.buffer.length} buffered messages`);
+                        existingSession.buffer.forEach(bufferedData => {
+                            ws.send(JSON.stringify({
+                                type: 'output',
+                                data: bufferedData
+                            }));
+                        });
+                    }
+
+                    existingSession.ws = ws;
+
+                    return;
+                }
+
+                console.log('[INFO] Starting shell in:', projectPath);
+                console.log('📋 Session info:', hasSession ? `Resume session ${sessionId}` : (isPlainShell ? 'Plain shell mode' : 'New session'));
+                console.log('🤖 Provider:', isPlainShell ? 'plain-shell' : provider);
+                if (initialCommand) {
+                    console.log('⚡ Initial command:', initialCommand);
+                }
+
+                // First send a welcome message
+                let welcomeMsg;
+                if (isPlainShell) {
+                    welcomeMsg = `\x1b[36mStarting terminal in: ${projectPath}\x1b[0m\r\n`;
+                } else {
+                    const providerName = provider === 'cursor' ? 'Cursor' : 'Claude';
+                    welcomeMsg = hasSession ?
+                        `\x1b[36mResuming ${providerName} session ${sessionId} in: ${projectPath}\x1b[0m\r\n` :
+                        `\x1b[36mStarting new ${providerName} session in: ${projectPath}\x1b[0m\r\n`;
+                }
+
+                ws.send(JSON.stringify({
+                    type: 'output',
+                    data: welcomeMsg
+                }));
+
+                try {
+                    // Prepare the shell command adapted to the platform and provider
+                    let shellCommand;
+                    if (isPlainShell) {
+                        // Plain shell mode - just run the initial command in the project directory
+                        if (os.platform() === 'win32') {
+                            shellCommand = `Set-Location -Path "${projectPath}"; ${initialCommand}`;
+                        } else {
+                            shellCommand = `cd "${projectPath}" && ${initialCommand}`;
+                        }
+                    } else if (provider === 'cursor') {
+                        // Use cursor-agent command
+                        if (os.platform() === 'win32') {
+                            if (hasSession && sessionId) {
+                                shellCommand = `Set-Location -Path "${projectPath}"; cursor-agent --resume="${sessionId}"`;
+                            } else {
+                                shellCommand = `Set-Location -Path "${projectPath}"; cursor-agent`;
+                            }
+                        } else {
+                            if (hasSession && sessionId) {
+                                shellCommand = `cd "${projectPath}" && cursor-agent --resume="${sessionId}"`;
+                            } else {
+                                shellCommand = `cd "${projectPath}" && cursor-agent`;
+                            }
+                        }
+                    } else {
+                        // Use claude command (default) or initialCommand if provided
+                        const command = initialCommand || 'claude';
+                        if (os.platform() === 'win32') {
+                            if (hasSession && sessionId) {
+                                // Try to resume session, but with fallback to new session if it fails
+                                shellCommand = `Set-Location -Path "${projectPath}"; claude --resume ${sessionId}; if ($LASTEXITCODE -ne 0) { claude }`;
+                            } else {
+                                shellCommand = `Set-Location -Path "${projectPath}"; ${command}`;
+                            }
+                        } else {
+                            if (hasSession && sessionId) {
+                                shellCommand = `cd "${projectPath}" && claude --resume ${sessionId} || claude`;
+                            } else {
+                                shellCommand = `cd "${projectPath}" && ${command}`;
+                            }
+                        }
+                    }
+
+                    console.log('🔧 Executing shell command:', shellCommand);
+
+                    // Use appropriate shell based on platform
+                    const shell = os.platform() === 'win32' ? 'powershell.exe' : 'bash';
+                    const shellArgs = os.platform() === 'win32' ? ['-Command', shellCommand] : ['-c', shellCommand];
+
+                    // Use terminal dimensions from client if provided, otherwise use defaults
+                    const termCols = data.cols || 80;
+                    const termRows = data.rows || 24;
+                    console.log('📐 Using terminal dimensions:', termCols, 'x', termRows);
+
+                    shellProcess = pty.spawn(shell, shellArgs, {
+                        name: 'xterm-256color',
+                        cols: termCols,
+                        rows: termRows,
+                        cwd: os.homedir(),
+                        env: {
+                            ...process.env,
+                            TERM: 'xterm-256color',
+                            COLORTERM: 'truecolor',
+                            FORCE_COLOR: '3',
+                            // Override browser opening commands to echo URL for detection
+                            BROWSER: os.platform() === 'win32' ? 'echo "OPEN_URL:"' : 'echo "OPEN_URL:"'
+                        }
+                    });
+
+                    console.log('🟢 Shell process started with PTY, PID:', shellProcess.pid);
+
+                    ptySessionsMap.set(ptySessionKey, {
+                        pty: shellProcess,
+                        ws: ws,
+                        buffer: [],
+                        timeoutId: null,
+                        projectPath,
+                        sessionId
+                    });
+
+                    // Handle data output
+                    shellProcess.onData((data) => {
+                        const session = ptySessionsMap.get(ptySessionKey);
+                        if (!session) return;
+
+                        if (session.buffer.length < 5000) {
+                            session.buffer.push(data);
+                        } else {
+                            session.buffer.shift();
+                            session.buffer.push(data);
+                        }
+
+                        if (session.ws && session.ws.readyState === WebSocket.OPEN) {
+                            let outputData = data;
+
+                            // Check for various URL opening patterns
+                            const patterns = [
+                                // Direct browser opening commands
+                                /(?:xdg-open|open|start)\s+(https?:\/\/[^\s\x1b\x07]+)/g,
+                                // BROWSER environment variable override
+                                /OPEN_URL:\s*(https?:\/\/[^\s\x1b\x07]+)/g,
+                                // Git and other tools opening URLs
+                                /Opening\s+(https?:\/\/[^\s\x1b\x07]+)/gi,
+                                // General URL patterns that might be opened
+                                /Visit:\s*(https?:\/\/[^\s\x1b\x07]+)/gi,
+                                /View at:\s*(https?:\/\/[^\s\x1b\x07]+)/gi,
+                                /Browse to:\s*(https?:\/\/[^\s\x1b\x07]+)/gi
+                            ];
+
+                            patterns.forEach(pattern => {
+                                let match;
+                                while ((match = pattern.exec(data)) !== null) {
+                                    const url = match[1];
+                                    console.log('[DEBUG] Detected URL for opening:', url);
+
+                                    // Send URL opening message to client
+                                    session.ws.send(JSON.stringify({
+                                        type: 'url_open',
+                                        url: url
+                                    }));
+
+                                    // Replace the OPEN_URL pattern with a user-friendly message
+                                    if (pattern.source.includes('OPEN_URL')) {
+                                        outputData = outputData.replace(match[0], `[INFO] Opening in browser: ${url}`);
+                                    }
+                                }
+                            });
+
+                            // Send regular output
+                            session.ws.send(JSON.stringify({
+                                type: 'output',
+                                data: outputData
+                            }));
+                        }
+                    });
+
+                    // Handle process exit
+                    shellProcess.onExit((exitCode) => {
+                        console.log('🔚 Shell process exited with code:', exitCode.exitCode, 'signal:', exitCode.signal);
+                        const session = ptySessionsMap.get(ptySessionKey);
+                        if (session && session.ws && session.ws.readyState === WebSocket.OPEN) {
+                            session.ws.send(JSON.stringify({
+                                type: 'output',
+                                data: `\r\n\x1b[33mProcess exited with code ${exitCode.exitCode}${exitCode.signal ? ` (${exitCode.signal})` : ''}\x1b[0m\r\n`
+                            }));
+                        }
+                        if (session && session.timeoutId) {
+                            clearTimeout(session.timeoutId);
+                        }
+                        ptySessionsMap.delete(ptySessionKey);
+                        shellProcess = null;
+                    });
+
+                } catch (spawnError) {
+                    console.error('[ERROR] Error spawning process:', spawnError);
+                    ws.send(JSON.stringify({
+                        type: 'output',
+                        data: `\r\n\x1b[31mError: ${spawnError.message}\x1b[0m\r\n`
+                    }));
+                }
+
+            } else if (data.type === 'input') {
+                // Send input to shell process
+                if (shellProcess && shellProcess.write) {
+                    try {
+                        shellProcess.write(data.data);
+                    } catch (error) {
+                        console.error('Error writing to shell:', error);
+                    }
+                } else {
+                    console.warn('No active shell process to send input to');
+                }
+            } else if (data.type === 'resize') {
+                // Handle terminal resize
+                if (shellProcess && shellProcess.resize) {
+                    console.log('Terminal resize requested:', data.cols, 'x', data.rows);
+                    shellProcess.resize(data.cols, data.rows);
+                }
+            }
+        } catch (error) {
+            console.error('[ERROR] Shell WebSocket error:', error.message);
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'output',
+                    data: `\r\n\x1b[31mError: ${error.message}\x1b[0m\r\n`
+                }));
+            }
+        }
+    });
+
+    ws.on('close', () => {
+        console.log('🔌 Shell client disconnected');
+
+        if (ptySessionKey) {
+            const session = ptySessionsMap.get(ptySessionKey);
+            if (session) {
+                console.log('⏳ PTY session kept alive, will timeout in 30 minutes:', ptySessionKey);
+                session.ws = null;
+
+                session.timeoutId = setTimeout(() => {
+                    console.log('⏰ PTY session timeout, killing process:', ptySessionKey);
+                    if (session.pty && session.pty.kill) {
+                        session.pty.kill();
+                    }
+                    ptySessionsMap.delete(ptySessionKey);
+                }, PTY_SESSION_TIMEOUT);
+            }
+        }
+    });
+
+    ws.on('error', (error) => {
+        console.error('[ERROR] Shell WebSocket error:', error);
+    });
+}
 // Audio transcription endpoint
 app.post('/api/transcribe', authenticateToken, async (req, res) => {
     try {

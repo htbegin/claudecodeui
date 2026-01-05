@@ -18,7 +18,7 @@ async function spawnCursor(command, options = {}, ws) {
     
     // Use tools settings passed from frontend, or defaults
     const settings = toolsSettings || {
-      allowedCommands: [],
+      allowedShellCommands: [],
       skipPermissions: false
     };
     
