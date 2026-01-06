@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
+import { authenticatedFetch } from '../utils/api';
 
 const xtermStyles = `
   .xterm .xterm-screen {
@@ -28,7 +29,9 @@ function Shell({ selectedProject, selectedSession, initialCommand, isPlainShell 
   const terminalRef = useRef(null);
   const terminal = useRef(null);
   const fitAddon = useRef(null);
-  const ws = useRef(null);
+  const streamAbortControllerRef = useRef(null);
+  const bufferRef = useRef('');
+  const clientIdRef = useRef(null);
   const [isConnected, setIsConnected] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const [isRestarting, setIsRestarting] = useState(false);
@@ -49,55 +52,136 @@ function Shell({ selectedProject, selectedSession, initialCommand, isPlainShell 
     onProcessCompleteRef.current = onProcessComplete;
   });
 
-  const connectWebSocket = useCallback(async () => {
+  if (!clientIdRef.current) {
+    const existing = sessionStorage.getItem('shell-client-id');
+    if (existing) {
+      clientIdRef.current = existing;
+    } else {
+      const generated = crypto?.randomUUID?.() || `shell-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      sessionStorage.setItem('shell-client-id', generated);
+      clientIdRef.current = generated;
+    }
+  }
+
+  const parseSsePayload = (payload) => {
+    if (!payload) {
+      return null;
+    }
+    try {
+      return JSON.parse(payload);
+    } catch (error) {
+      return { type: 'raw', data: payload };
+    }
+  };
+
+  const sendShellInput = useCallback((data) => {
+    if (!clientIdRef.current) {
+      return;
+    }
+
+    authenticatedFetch('/api/shell/input', {
+      method: 'POST',
+      body: JSON.stringify({
+        clientId: clientIdRef.current,
+        data
+      })
+    }).catch((error) => {
+      console.error('[Shell] Error sending input:', error);
+    });
+  }, []);
+
+  const sendShellResize = useCallback((cols, rows) => {
+    if (!clientIdRef.current) {
+      return;
+    }
+
+    authenticatedFetch('/api/shell/resize', {
+      method: 'POST',
+      body: JSON.stringify({
+        clientId: clientIdRef.current,
+        cols,
+        rows
+      })
+    }).catch((error) => {
+      console.error('[Shell] Error sending resize:', error);
+    });
+  }, []);
+
+  const connectShellStream = useCallback(async () => {
     if (isConnecting || isConnected) return;
 
     try {
       const isPlatform = import.meta.env.VITE_IS_PLATFORM === 'true';
-      let wsUrl;
-
-      if (isPlatform) {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        wsUrl = `${protocol}//${window.location.host}/shell`;
-      } else {
-        const token = localStorage.getItem('auth-token');
-        if (!token) {
-          console.error('No authentication token found for Shell WebSocket connection');
-          return;
-        }
-
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        wsUrl = `${protocol}//${window.location.host}/shell?token=${encodeURIComponent(token)}`;
+      const token = localStorage.getItem('auth-token');
+      if (!isPlatform && !token) {
+        console.error('No authentication token found for Shell stream connection');
+        setIsConnecting(false);
+        return;
       }
 
-      ws.current = new WebSocket(wsUrl);
+      if (streamAbortControllerRef.current) {
+        streamAbortControllerRef.current.abort();
+      }
 
-      ws.current.onopen = () => {
-        setIsConnected(true);
-        setIsConnecting(false);
+      const controller = new AbortController();
+      streamAbortControllerRef.current = controller;
+      bufferRef.current = '';
 
-        setTimeout(() => {
-          if (fitAddon.current && terminal.current) {
-            fitAddon.current.fit();
+      const params = new URLSearchParams();
+      params.set('clientId', clientIdRef.current);
+      params.set('projectPath', selectedProjectRef.current.fullPath || selectedProjectRef.current.path);
+      params.set('sessionId', isPlainShellRef.current ? '' : (selectedSessionRef.current?.id || ''));
+      params.set('hasSession', isPlainShellRef.current ? 'false' : String(!!selectedSessionRef.current));
+      params.set('provider', isPlainShellRef.current ? 'plain-shell' : (selectedSessionRef.current?.__provider || 'claude'));
+      params.set('cols', terminal.current?.cols || 80);
+      params.set('rows', terminal.current?.rows || 24);
+      if (initialCommandRef.current) {
+        params.set('initialCommand', initialCommandRef.current);
+      }
+      params.set('isPlainShell', String(isPlainShellRef.current));
 
-            ws.current.send(JSON.stringify({
-              type: 'init',
-              projectPath: selectedProjectRef.current.fullPath || selectedProjectRef.current.path,
-              sessionId: isPlainShellRef.current ? null : selectedSessionRef.current?.id,
-              hasSession: isPlainShellRef.current ? false : !!selectedSessionRef.current,
-              provider: isPlainShellRef.current ? 'plain-shell' : (selectedSessionRef.current?.__provider || 'claude'),
-              cols: terminal.current.cols,
-              rows: terminal.current.rows,
-              initialCommand: initialCommandRef.current,
-              isPlainShell: isPlainShellRef.current
-            }));
+      const response = await authenticatedFetch(`/api/shell/stream?${params.toString()}`, {
+        method: 'GET',
+        headers: {
+          Accept: 'text/event-stream'
+        },
+        signal: controller.signal
+      });
+
+      if (!response.ok || !response.body) {
+        throw new Error(`Failed to connect shell stream: ${response.status}`);
+      }
+
+      setIsConnected(true);
+      setIsConnecting(false);
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) {
+          break;
+        }
+
+        bufferRef.current += decoder.decode(value, { stream: true });
+        const parts = bufferRef.current.split('\n\n');
+        bufferRef.current = parts.pop() || '';
+
+        for (const part of parts) {
+          const lines = part.split('\n');
+          const dataLines = [];
+          for (const line of lines) {
+            if (line.startsWith('data:')) {
+              dataLines.push(line.slice(5).trimStart());
+            }
           }
-        }, 100);
-      };
 
-      ws.current.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
+          const payload = dataLines.join('\n');
+          const data = parseSsePayload(payload);
+          if (!data) {
+            continue;
+          }
 
           if (data.type === 'output') {
             let output = data.data;
@@ -120,41 +204,27 @@ function Shell({ selectedProject, selectedSession, initialCommand, isPlainShell 
           } else if (data.type === 'url_open') {
             window.open(data.url, '_blank');
           }
-        } catch (error) {
-          console.error('[Shell] Error handling WebSocket message:', error, event.data);
         }
-      };
-
-      ws.current.onclose = (event) => {
-        setIsConnected(false);
-        setIsConnecting(false);
-
-        if (terminal.current) {
-          terminal.current.clear();
-          terminal.current.write('\x1b[2J\x1b[H');
-        }
-      };
-
-      ws.current.onerror = (error) => {
-        setIsConnected(false);
-        setIsConnecting(false);
-      };
+      }
     } catch (error) {
-      setIsConnected(false);
-      setIsConnecting(false);
+      if (error.name !== 'AbortError') {
+        console.error('[Shell] Error handling shell stream:', error);
+      }
     }
+    setIsConnected(false);
+    setIsConnecting(false);
   }, [isConnecting, isConnected]);
 
   const connectToShell = useCallback(() => {
     if (!isInitialized || isConnected || isConnecting) return;
     setIsConnecting(true);
-    connectWebSocket();
-  }, [isInitialized, isConnected, isConnecting, connectWebSocket]);
+    connectShellStream();
+  }, [isInitialized, isConnected, isConnecting, connectShellStream]);
 
   const disconnectFromShell = useCallback(() => {
-    if (ws.current) {
-      ws.current.close();
-      ws.current = null;
+    if (streamAbortControllerRef.current) {
+      streamAbortControllerRef.current.abort();
+      streamAbortControllerRef.current = null;
     }
 
     if (terminal.current) {
@@ -289,12 +359,7 @@ function Shell({ selectedProject, selectedSession, initialCommand, isPlainShell 
 
       if ((event.ctrlKey || event.metaKey) && event.key === 'v') {
         navigator.clipboard.readText().then(text => {
-          if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-            ws.current.send(JSON.stringify({
-              type: 'input',
-              data: text
-            }));
-          }
+          sendShellInput(text);
         }).catch(() => {});
         return false;
       }
@@ -305,37 +370,22 @@ function Shell({ selectedProject, selectedSession, initialCommand, isPlainShell 
     setTimeout(() => {
       if (fitAddon.current) {
         fitAddon.current.fit();
-        if (terminal.current && ws.current && ws.current.readyState === WebSocket.OPEN) {
-          ws.current.send(JSON.stringify({
-            type: 'resize',
-            cols: terminal.current.cols,
-            rows: terminal.current.rows
-          }));
+        if (terminal.current) {
+          sendShellResize(terminal.current.cols, terminal.current.rows);
         }
       }
     }, 100);
 
     setIsInitialized(true);
     terminal.current.onData((data) => {
-      if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-        ws.current.send(JSON.stringify({
-          type: 'input',
-          data: data
-        }));
-      }
+      sendShellInput(data);
     });
 
     const resizeObserver = new ResizeObserver(() => {
       if (fitAddon.current && terminal.current) {
         setTimeout(() => {
           fitAddon.current.fit();
-          if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-            ws.current.send(JSON.stringify({
-              type: 'resize',
-              cols: terminal.current.cols,
-              rows: terminal.current.rows
-            }));
-          }
+          sendShellResize(terminal.current.cols, terminal.current.rows);
         }, 50);
       }
     });
@@ -347,17 +397,17 @@ function Shell({ selectedProject, selectedSession, initialCommand, isPlainShell 
     return () => {
       resizeObserver.disconnect();
 
-      if (ws.current && (ws.current.readyState === WebSocket.OPEN || ws.current.readyState === WebSocket.CONNECTING)) {
-        ws.current.close();
+      if (streamAbortControllerRef.current) {
+        streamAbortControllerRef.current.abort();
+        streamAbortControllerRef.current = null;
       }
-      ws.current = null;
 
       if (terminal.current) {
         terminal.current.dispose();
         terminal.current = null;
       }
     };
-  }, [selectedProject?.path || selectedProject?.fullPath, isRestarting]);
+  }, [selectedProject?.path || selectedProject?.fullPath, isRestarting, sendShellInput, sendShellResize]);
 
   useEffect(() => {
     if (!autoConnect || !isInitialized || isConnecting || isConnected) return;
