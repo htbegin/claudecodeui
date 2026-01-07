@@ -1,5 +1,6 @@
+import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
-import { Copy, RefreshCw } from 'lucide-react';
+import { LogIn } from 'lucide-react';
 import ClaudeLogo from '../ClaudeLogo';
 import CursorLogo from '../CursorLogo';
 import CodexLogo from '../CodexLogo';
@@ -37,7 +38,7 @@ const agentConfig = {
   },
 };
 
-export default function AccountContent({ agent, authStatus, loginCommand, onCopyCommand, onRefresh }) {
+export default function AccountContent({ agent, authStatus, onLogin }) {
   const config = agentConfig[agent];
   const { Logo } = config;
 
@@ -86,39 +87,26 @@ export default function AccountContent({ agent, authStatus, loginCommand, onCopy
             </div>
           </div>
 
-          <div className="border-t border-gray-200 dark:border-gray-700 pt-4 space-y-3">
-            <div>
-              <div className={`font-medium ${config.textClass}`}>
-                {authStatus?.authenticated ? 'Re-authenticate' : 'Login'}
+          <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className={`font-medium ${config.textClass}`}>
+                  {authStatus?.authenticated ? 'Re-authenticate' : 'Login'}
+                </div>
+                <div className={`text-sm ${config.subtextClass}`}>
+                  {authStatus?.authenticated
+                    ? 'Sign in with a different account or refresh credentials'
+                    : `Sign in to your ${config.name} account to enable AI features`}
+                </div>
               </div>
-              <div className={`text-sm ${config.subtextClass}`}>
-                {authStatus?.authenticated
-                  ? 'Sign in with a different account or refresh credentials'
-                  : `Run the CLI command to sign in to your ${config.name} account`}
-              </div>
-            </div>
-
-            <div className="bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 font-mono text-xs text-gray-700 dark:text-gray-200 break-all">
-              {loginCommand}
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => onCopyCommand?.(loginCommand)}
-                className={`inline-flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-md ${config.buttonClass} text-white`}
+              <Button
+                onClick={onLogin}
+                className={`${config.buttonClass} text-white`}
+                size="sm"
               >
-                <Copy className="w-3.5 h-3.5" />
-                Copy command
-              </button>
-              <button
-                type="button"
-                onClick={onRefresh}
-                className="inline-flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                Refresh status
-              </button>
+                <LogIn className="w-4 h-4 mr-2" />
+                {authStatus?.authenticated ? 'Re-login' : 'Login'}
+              </Button>
             </div>
           </div>
 

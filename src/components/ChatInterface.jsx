@@ -1441,7 +1441,7 @@ const MessageComponent = memo(({ message, index, prevMessage, createDiff, onFile
                               ⏳ Waiting for your response in the CLI
                             </p>
                             <p className="text-amber-800 dark:text-amber-200 text-xs">
-                              Please select an option in the CLI where Claude is running.
+                              Please select an option in your terminal where Claude is running.
                             </p>
                           </div>
                         </>
@@ -3356,7 +3356,7 @@ function ChatInterface({ selectedProject, selectedSession, sendMessage, messages
           break;
 
         case 'cursor-output':
-        // Handle Cursor raw CLI output; strip ANSI and ignore empty control-only payloads
+          // Handle Cursor raw terminal output; strip ANSI and ignore empty control-only payloads
           try {
             const raw = String(latestMessage.data ?? '');
             const cleaned = raw.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '').trim();

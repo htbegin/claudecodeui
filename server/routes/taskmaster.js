@@ -33,7 +33,8 @@ async function checkTaskMasterInstallation() {
     return new Promise((resolve) => {
         // Check if task-master command is available
         const child = spawn('which', ['task-master'], { 
-            stdio: ['ignore', 'pipe', 'pipe']
+            stdio: ['ignore', 'pipe', 'pipe'],
+            shell: true 
         });
         
         let output = '';
@@ -51,7 +52,8 @@ async function checkTaskMasterInstallation() {
             if (code === 0 && output.trim()) {
                 // TaskMaster is installed, get version
                 const versionChild = spawn('task-master', ['--version'], { 
-                    stdio: ['ignore', 'pipe', 'pipe']
+                    stdio: ['ignore', 'pipe', 'pipe'],
+                    shell: true 
                 });
                 
                 let versionOutput = '';

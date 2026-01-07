@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Badge } from './ui/badge';
-import { X, Plus, Settings as SettingsIcon, Shield, AlertTriangle, Moon, Sun, Server, Edit3, Trash2, Globe, Zap, FolderOpen, Key, GitBranch, Check } from 'lucide-react';
+import { X, Plus, Settings as SettingsIcon, Shield, AlertTriangle, Moon, Sun, Server, Edit3, Trash2, Globe, Terminal, Zap, FolderOpen, LogIn, Key, GitBranch, Check } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import ClaudeLogo from './ClaudeLogo';
 import CursorLogo from './CursorLogo';
@@ -10,6 +10,7 @@ import CodexLogo from './CodexLogo';
 import CredentialsSettings from './CredentialsSettings';
 import GitSettings from './GitSettings';
 import TasksSettings from './TasksSettings';
+import LoginModal from './LoginModal';
 import { authenticatedFetch } from '../utils/api';
 
 // New settings components
@@ -98,6 +99,10 @@ function Settings({ isOpen, onClose, projects = [], initialTab = 'agents' }) {
   const [editingCodexMcpServer, setEditingCodexMcpServer] = useState(null);
   const [codexMcpLoading, setCodexMcpLoading] = useState(false);
 
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [loginProvider, setLoginProvider] = useState('');
+  const [selectedProject, setSelectedProject] = useState(null);
+
   const [claudeAuthStatus, setClaudeAuthStatus] = useState({
     authenticated: false,
     email: null,
@@ -135,20 +140,20 @@ function Settings({ isOpen, onClose, projects = [], initialTab = 'agents' }) {
     'WebSearch'
   ];
   
-  // Common CLI commands for Cursor
+  // Common shell commands for Cursor
   const commonCursorCommands = [
-    'Command(ls)',
-    'Command(mkdir)',
-    'Command(cd)',
-    'Command(cat)',
-    'Command(echo)',
-    'Command(git status)',
-    'Command(git diff)',
-    'Command(git log)',
-    'Command(npm install)',
-    'Command(npm run)',
-    'Command(python)',
-    'Command(node)'
+    'Shell(ls)',
+    'Shell(mkdir)',
+    'Shell(cd)',
+    'Shell(cat)',
+    'Shell(echo)',
+    'Shell(git status)',
+    'Shell(git diff)',
+    'Shell(git log)',
+    'Shell(npm install)',
+    'Shell(npm run)',
+    'Shell(python)',
+    'Shell(node)'
   ];
 
   // Fetch Cursor MCP servers
@@ -677,18 +682,35 @@ function Settings({ isOpen, onClose, projects = [], initialTab = 'agents' }) {
     }
   };
 
-  const loginCommands = {
-    claude: 'claude setup-token --dangerously-skip-permissions',
-    cursor: 'cursor-agent login',
-    codex: 'codex login'
+  const handleClaudeLogin = () => {
+    setLoginProvider('claude');
+    setSelectedProject(projects?.[0] || { name: 'default', fullPath: process.cwd() });
+    setShowLoginModal(true);
   };
 
-  const handleCopyLoginCommand = async (command) => {
-    if (!command) return;
-    try {
-      await navigator.clipboard.writeText(command);
-    } catch (error) {
-      console.error('Failed to copy login command:', error);
+  const handleCursorLogin = () => {
+    setLoginProvider('cursor');
+    setSelectedProject(projects?.[0] || { name: 'default', fullPath: process.cwd() });
+    setShowLoginModal(true);
+  };
+
+  const handleCodexLogin = () => {
+    setLoginProvider('codex');
+    setSelectedProject(projects?.[0] || { name: 'default', fullPath: process.cwd() });
+    setShowLoginModal(true);
+  };
+
+  const handleLoginComplete = (exitCode) => {
+    if (exitCode === 0) {
+      setSaveStatus('success');
+
+      if (loginProvider === 'claude') {
+        checkClaudeAuthStatus();
+      } else if (loginProvider === 'cursor') {
+        checkCursorAuthStatus();
+      } else if (loginProvider === 'codex') {
+        checkCodexAuthStatus();
+      }
     }
   };
 
@@ -909,7 +931,7 @@ function Settings({ isOpen, onClose, projects = [], initialTab = 'agents' }) {
 
   const getTransportIcon = (type) => {
     switch (type) {
-      case 'stdio': return <Server className="w-4 h-4" />;
+      case 'stdio': return <Terminal className="w-4 h-4" />;
       case 'sse': return <Zap className="w-4 h-4" />;
       case 'http': return <Globe className="w-4 h-4" />;
       default: return <Server className="w-4 h-4" />;
@@ -1327,12 +1349,10 @@ function Settings({ isOpen, onClose, projects = [], initialTab = 'agents' }) {
                           selectedAgent === 'cursor' ? cursorAuthStatus :
                           codexAuthStatus
                         }
-                        loginCommand={loginCommands[selectedAgent]}
-                        onCopyCommand={handleCopyLoginCommand}
-                        onRefresh={
-                          selectedAgent === 'claude' ? checkClaudeAuthStatus :
-                          selectedAgent === 'cursor' ? checkCursorAuthStatus :
-                          checkCodexAuthStatus
+                        onLogin={
+                          selectedAgent === 'claude' ? handleClaudeLogin :
+                          selectedAgent === 'cursor' ? handleCursorLogin :
+                          handleCodexLogin
                         }
                       />
                     )}
@@ -1930,6 +1950,15 @@ function Settings({ isOpen, onClose, projects = [], initialTab = 'agents' }) {
         </div>
       </div>
 
+      {/* Login Modal */}
+      <LoginModal
+        key={loginProvider}
+        isOpen={showLoginModal}
+        onClose={() => setShowLoginModal(false)}
+        provider={loginProvider}
+        project={selectedProject}
+        onComplete={handleLoginComplete}
+      />
     </div>
   );
 }

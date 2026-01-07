@@ -3,12 +3,14 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import { parse as parseShellCommand } from 'shell-quote';
+
 const execFileAsync = promisify(execFile);
 
 // Configuration
 const MAX_INCLUDE_DEPTH = 3;
-const COMMAND_TIMEOUT = 30000; // 30 seconds
-const COMMAND_ALLOWLIST = [
+const BASH_TIMEOUT = 30000; // 30 seconds
+const BASH_COMMAND_ALLOWLIST = [
   'echo',
   'ls',
   'pwd',
@@ -151,20 +153,25 @@ export function validateCommand(commandString) {
     return { allowed: false, command: '', args: [], error: 'Empty command' };
   }
 
-  // Parse the command while respecting quotes/escapes
-  const parsed = parseCommandTokens(trimmedCommand);
+  // Parse the command using shell-quote to handle quotes properly
+  const parsed = parseShellCommand(trimmedCommand);
 
-  // Check for disallowed operators outside of quotes
-  if (hasDisallowedOperators(trimmedCommand)) {
+  // Check for shell operators or control structures
+  const hasOperators = parsed.some(token =>
+    typeof token === 'object' && token.op
+  );
+
+  if (hasOperators) {
     return {
       allowed: false,
       command: '',
       args: [],
-      error: 'Operators (&&, ||, |, ;, etc.) are not allowed'
+      error: 'Shell operators (&&, ||, |, ;, etc.) are not allowed'
     };
   }
 
-  const tokens = parsed.filter(Boolean);
+  // Extract command and args (all should be strings after validation)
+  const tokens = parsed.filter(token => typeof token === 'string');
 
   if (tokens.length === 0) {
     return { allowed: false, command: '', args: [], error: 'No valid command found' };
@@ -176,7 +183,7 @@ export function validateCommand(commandString) {
   const commandName = path.basename(command);
 
   // Check if command exactly matches allowlist (no prefix matching)
-  const isAllowed = COMMAND_ALLOWLIST.includes(commandName);
+  const isAllowed = BASH_COMMAND_ALLOWLIST.includes(commandName);
 
   if (!isAllowed) {
     return {
@@ -209,13 +216,13 @@ export function validateCommand(commandString) {
  * @param {string} command - Command to validate
  * @returns {boolean} True if command is allowed
  */
-export function isCommandAllowed(command) {
+export function isBashCommandAllowed(command) {
   const result = validateCommand(command);
   return result.allowed;
 }
 
 /**
- * Sanitize command output
+ * Sanitize bash command output
  * @param {string} output - Raw command output
  * @returns {string} Sanitized output
  */
@@ -235,15 +242,15 @@ export function sanitizeOutput(output) {
 }
 
 /**
- * Process command invocations in content (!command syntax)
+ * Process bash commands in content (!command syntax)
  * @param {string} content - Content with !command syntax
- * @param {object} options - Options for command execution
+ * @param {object} options - Options for bash execution
  * @returns {Promise<string>} Content with bash commands executed and replaced
  */
-export async function processCommands(content, options = {}) {
+export async function processBashCommands(content, options = {}) {
   if (!content) return content;
 
-  const { cwd = process.cwd(), timeout = COMMAND_TIMEOUT } = options;
+  const { cwd = process.cwd(), timeout = BASH_TIMEOUT } = options;
 
   // Match !command patterns (at start of line or after whitespace)
   const commandPattern = /(?:^|\n)!(.+?)(?=\n|$)/g;
@@ -267,7 +274,7 @@ export async function processCommands(content, options = {}) {
     }
 
     try {
-      // Execute directly using execFile with parsed args
+      // Execute without shell using execFile with parsed args
       const { stdout, stderr } = await execFileAsync(
         validation.command,
         validation.args,
@@ -275,6 +282,7 @@ export async function processCommands(content, options = {}) {
           cwd,
           timeout,
           maxBuffer: 1024 * 1024, // 1MB max output
+          shell: false, // IMPORTANT: No shell interpretation
           env: { ...process.env, PATH: process.env.PATH } // Inherit PATH for finding commands
         }
       );
@@ -292,97 +300,4 @@ export async function processCommands(content, options = {}) {
   }
 
   return result;
-}
-
-function parseCommandTokens(input) {
-  const tokens = [];
-  let current = '';
-  let inSingle = false;
-  let inDouble = false;
-  let escapeNext = false;
-
-  for (let i = 0; i < input.length; i += 1) {
-    const char = input[i];
-
-    if (escapeNext) {
-      current += char;
-      escapeNext = false;
-      continue;
-    }
-
-    if (!inSingle && char === '\\') {
-      escapeNext = true;
-      continue;
-    }
-
-    if (!inDouble && char === '\'') {
-      inSingle = !inSingle;
-      continue;
-    }
-
-    if (!inSingle && char === '"') {
-      inDouble = !inDouble;
-      continue;
-    }
-
-    if (!inSingle && !inDouble && /\s/.test(char)) {
-      if (current) {
-        tokens.push(current);
-        current = '';
-      }
-      continue;
-    }
-
-    current += char;
-  }
-
-  if (current) {
-    tokens.push(current);
-  }
-
-  return tokens;
-}
-
-function hasDisallowedOperators(input) {
-  let inSingle = false;
-  let inDouble = false;
-  let escapeNext = false;
-
-  for (let i = 0; i < input.length; i += 1) {
-    const char = input[i];
-
-    if (escapeNext) {
-      escapeNext = false;
-      continue;
-    }
-
-    if (!inSingle && char === '\\') {
-      escapeNext = true;
-      continue;
-    }
-
-    if (!inDouble && char === '\'') {
-      inSingle = !inSingle;
-      continue;
-    }
-
-    if (!inSingle && char === '"') {
-      inDouble = !inDouble;
-      continue;
-    }
-
-    if (inSingle || inDouble) {
-      continue;
-    }
-
-    if (char === ';' || char === '|' || char === '&' || char === '>') {
-      return true;
-    }
-
-    if (char === '<') {
-      return true;
-    }
-  }
-
-  return false;
 }

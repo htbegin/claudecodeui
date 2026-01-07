@@ -20,20 +20,20 @@ const commonClaudeTools = [
   'WebSearch'
 ];
 
-// Common CLI commands for Cursor
+// Common shell commands for Cursor
 const commonCursorCommands = [
-  'Command(ls)',
-  'Command(mkdir)',
-  'Command(cd)',
-  'Command(cat)',
-  'Command(echo)',
-  'Command(git status)',
-  'Command(git diff)',
-  'Command(git log)',
-  'Command(npm install)',
-  'Command(npm run)',
-  'Command(python)',
-  'Command(node)'
+  'Shell(ls)',
+  'Shell(mkdir)',
+  'Shell(cd)',
+  'Shell(cat)',
+  'Shell(echo)',
+  'Shell(git status)',
+  'Shell(git diff)',
+  'Shell(git log)',
+  'Shell(npm install)',
+  'Shell(npm run)',
+  'Shell(python)',
+  'Shell(node)'
 ];
 
 // Claude Permissions
@@ -328,18 +328,18 @@ function CursorPermissions({
         <div className="flex items-center gap-3">
           <Shield className="w-5 h-5 text-green-500" />
           <h3 className="text-lg font-medium text-foreground">
-            Allowed CLI Commands
+            Allowed Shell Commands
           </h3>
         </div>
         <p className="text-sm text-muted-foreground">
-          CLI commands that are automatically allowed without prompting
+          Shell commands that are automatically allowed without prompting
         </p>
 
         <div className="flex flex-col sm:flex-row gap-2">
           <Input
             value={newAllowedCommand}
             onChange={(e) => setNewAllowedCommand(e.target.value)}
-            placeholder='e.g., "Command(ls)" or "Command(git status)"'
+            placeholder='e.g., "Shell(ls)" or "Shell(git status)"'
             onKeyPress={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault();
@@ -409,18 +409,18 @@ function CursorPermissions({
         <div className="flex items-center gap-3">
           <AlertTriangle className="w-5 h-5 text-red-500" />
           <h3 className="text-lg font-medium text-foreground">
-            Blocked CLI Commands
+            Blocked Shell Commands
           </h3>
         </div>
         <p className="text-sm text-muted-foreground">
-          CLI commands that are automatically blocked
+          Shell commands that are automatically blocked
         </p>
 
         <div className="flex flex-col sm:flex-row gap-2">
           <Input
             value={newDisallowedCommand}
             onChange={(e) => setNewDisallowedCommand(e.target.value)}
-            placeholder='e.g., "Command(rm -rf)" or "Command(sudo)"'
+            placeholder='e.g., "Shell(rm -rf)" or "Shell(sudo)"'
             onKeyPress={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault();
@@ -467,13 +467,13 @@ function CursorPermissions({
       {/* Help Section */}
       <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg p-4">
         <h4 className="font-medium text-purple-900 dark:text-purple-100 mb-2">
-          CLI Command Examples:
+          Shell Command Examples:
         </h4>
         <ul className="text-sm text-purple-800 dark:text-purple-200 space-y-1">
-          <li><code className="bg-purple-100 dark:bg-purple-800 px-1 rounded">"Command(ls)"</code> - Allow ls command</li>
-          <li><code className="bg-purple-100 dark:bg-purple-800 px-1 rounded">"Command(git status)"</code> - Allow git status</li>
-          <li><code className="bg-purple-100 dark:bg-purple-800 px-1 rounded">"Command(npm install)"</code> - Allow npm install</li>
-          <li><code className="bg-purple-100 dark:bg-purple-800 px-1 rounded">"Command(rm -rf)"</code> - Block recursive delete</li>
+          <li><code className="bg-purple-100 dark:bg-purple-800 px-1 rounded">"Shell(ls)"</code> - Allow ls command</li>
+          <li><code className="bg-purple-100 dark:bg-purple-800 px-1 rounded">"Shell(git status)"</code> - Allow git status</li>
+          <li><code className="bg-purple-100 dark:bg-purple-800 px-1 rounded">"Shell(npm install)"</code> - Allow npm install</li>
+          <li><code className="bg-purple-100 dark:bg-purple-800 px-1 rounded">"Shell(rm -rf)"</code> - Block recursive delete</li>
         </ul>
       </div>
     </div>

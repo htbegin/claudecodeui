@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { ChevronRight, ChevronLeft, Check, GitBranch, User, Mail, Copy, RefreshCw, Loader2 } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { ChevronRight, ChevronLeft, Check, GitBranch, User, Mail, LogIn, ExternalLink, Loader2 } from 'lucide-react';
 import ClaudeLogo from './ClaudeLogo';
 import CursorLogo from './CursorLogo';
 import CodexLogo from './CodexLogo';
+import LoginModal from './LoginModal';
 import { authenticatedFetch } from '../utils/api';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -12,6 +13,9 @@ const Onboarding = ({ onComplete }) => {
   const [gitEmail, setGitEmail] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+
+  const [activeLoginProvider, setActiveLoginProvider] = useState(null);
+  const [selectedProject] = useState({ name: 'default', fullPath: '' });
 
   const [claudeAuthStatus, setClaudeAuthStatus] = useState({
     authenticated: false,
@@ -36,6 +40,8 @@ const Onboarding = ({ onComplete }) => {
 
   const { user } = useAuth();
 
+  const prevActiveLoginProviderRef = useRef(undefined);
+
   useEffect(() => {
     loadGitConfig();
   }, []);
@@ -54,10 +60,18 @@ const Onboarding = ({ onComplete }) => {
   };
 
   useEffect(() => {
-    checkClaudeAuthStatus();
-    checkCursorAuthStatus();
-    checkCodexAuthStatus();
-  }, []);
+    const prevProvider = prevActiveLoginProviderRef.current;
+    prevActiveLoginProviderRef.current = activeLoginProvider;
+
+    const isInitialMount = prevProvider === undefined;
+    const isModalClosing = prevProvider !== null && activeLoginProvider === null;
+
+    if (isInitialMount || isModalClosing) {
+      checkClaudeAuthStatus();
+      checkCursorAuthStatus();
+      checkCodexAuthStatus();
+    }
+  }, [activeLoginProvider]);
 
   const checkClaudeAuthStatus = async () => {
     try {
@@ -149,18 +163,19 @@ const Onboarding = ({ onComplete }) => {
     }
   };
 
-  const loginCommands = {
-    claude: 'claude setup-token --dangerously-skip-permissions',
-    cursor: 'cursor-agent login',
-    codex: 'codex login'
-  };
+  const handleClaudeLogin = () => setActiveLoginProvider('claude');
+  const handleCursorLogin = () => setActiveLoginProvider('cursor');
+  const handleCodexLogin = () => setActiveLoginProvider('codex');
 
-  const handleCopyCommand = async (command) => {
-    if (!command) return;
-    try {
-      await navigator.clipboard.writeText(command);
-    } catch (error) {
-      console.error('Failed to copy login command:', error);
+  const handleLoginComplete = (exitCode) => {
+    if (exitCode === 0) {
+      if (activeLoginProvider === 'claude') {
+        checkClaudeAuthStatus();
+      } else if (activeLoginProvider === 'cursor') {
+        checkCursorAuthStatus();
+      } else if (activeLoginProvider === 'codex') {
+        checkCodexAuthStatus();
+      }
     }
   };
 
@@ -344,34 +359,15 @@ const Onboarding = ({ onComplete }) => {
                       </div>
                     </div>
                   </div>
+                  {!claudeAuthStatus.authenticated && !claudeAuthStatus.loading && (
+                    <button
+                      onClick={handleClaudeLogin}
+                      className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-2 px-4 rounded-lg transition-colors"
+                    >
+                      Login
+                    </button>
+                  )}
                 </div>
-                {!claudeAuthStatus.loading && (
-                  <div className="mt-3 space-y-2">
-                    {!claudeAuthStatus.authenticated && (
-                      <div className="bg-white/70 dark:bg-gray-900/60 border border-gray-200 dark:border-gray-700 rounded-md px-3 py-2 font-mono text-xs text-gray-700 dark:text-gray-200 break-all">
-                        {loginCommands.claude}
-                      </div>
-                    )}
-                    <div className="flex flex-wrap gap-2">
-                      {!claudeAuthStatus.authenticated && (
-                        <button
-                          onClick={() => handleCopyCommand(loginCommands.claude)}
-                          className="inline-flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-md bg-blue-600 hover:bg-blue-700 text-white transition-colors"
-                        >
-                          <Copy className="w-3.5 h-3.5" />
-                          Copy command
-                        </button>
-                      )}
-                      <button
-                        onClick={checkClaudeAuthStatus}
-                        className="inline-flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-                      >
-                        <RefreshCw className="w-3.5 h-3.5" />
-                        Refresh status
-                      </button>
-                    </div>
-                  </div>
-                )}
               </div>
 
               {/* Cursor */}
@@ -396,34 +392,15 @@ const Onboarding = ({ onComplete }) => {
                       </div>
                     </div>
                   </div>
+                  {!cursorAuthStatus.authenticated && !cursorAuthStatus.loading && (
+                    <button
+                      onClick={handleCursorLogin}
+                      className="bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium py-2 px-4 rounded-lg transition-colors"
+                    >
+                      Login
+                    </button>
+                  )}
                 </div>
-                {!cursorAuthStatus.loading && (
-                  <div className="mt-3 space-y-2">
-                    {!cursorAuthStatus.authenticated && (
-                      <div className="bg-white/70 dark:bg-gray-900/60 border border-gray-200 dark:border-gray-700 rounded-md px-3 py-2 font-mono text-xs text-gray-700 dark:text-gray-200 break-all">
-                        {loginCommands.cursor}
-                      </div>
-                    )}
-                    <div className="flex flex-wrap gap-2">
-                      {!cursorAuthStatus.authenticated && (
-                        <button
-                          onClick={() => handleCopyCommand(loginCommands.cursor)}
-                          className="inline-flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-md bg-purple-600 hover:bg-purple-700 text-white transition-colors"
-                        >
-                          <Copy className="w-3.5 h-3.5" />
-                          Copy command
-                        </button>
-                      )}
-                      <button
-                        onClick={checkCursorAuthStatus}
-                        className="inline-flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-                      >
-                        <RefreshCw className="w-3.5 h-3.5" />
-                        Refresh status
-                      </button>
-                    </div>
-                  </div>
-                )}
               </div>
 
               {/* Codex */}
@@ -448,34 +425,15 @@ const Onboarding = ({ onComplete }) => {
                       </div>
                     </div>
                   </div>
+                  {!codexAuthStatus.authenticated && !codexAuthStatus.loading && (
+                    <button
+                      onClick={handleCodexLogin}
+                      className="bg-gray-800 hover:bg-gray-900 dark:bg-gray-700 dark:hover:bg-gray-600 text-white text-sm font-medium py-2 px-4 rounded-lg transition-colors"
+                    >
+                      Login
+                    </button>
+                  )}
                 </div>
-                {!codexAuthStatus.loading && (
-                  <div className="mt-3 space-y-2">
-                    {!codexAuthStatus.authenticated && (
-                      <div className="bg-white/70 dark:bg-gray-900/60 border border-gray-200 dark:border-gray-700 rounded-md px-3 py-2 font-mono text-xs text-gray-700 dark:text-gray-200 break-all">
-                        {loginCommands.codex}
-                      </div>
-                    )}
-                    <div className="flex flex-wrap gap-2">
-                      {!codexAuthStatus.authenticated && (
-                        <button
-                          onClick={() => handleCopyCommand(loginCommands.codex)}
-                          className="inline-flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-md bg-gray-800 hover:bg-gray-900 dark:bg-gray-700 dark:hover:bg-gray-600 text-white transition-colors"
-                        >
-                          <Copy className="w-3.5 h-3.5" />
-                          Copy command
-                        </button>
-                      )}
-                      <button
-                        onClick={checkCodexAuthStatus}
-                        className="inline-flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-                      >
-                        <RefreshCw className="w-3.5 h-3.5" />
-                        Refresh status
-                      </button>
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
 
@@ -610,6 +568,16 @@ const Onboarding = ({ onComplete }) => {
           </div>
         </div>
       </div>
+
+      {activeLoginProvider && (
+        <LoginModal
+          isOpen={!!activeLoginProvider}
+          onClose={() => setActiveLoginProvider(null)}
+          provider={activeLoginProvider}
+          project={selectedProject}
+          onComplete={handleLoginComplete}
+        />
+      )}
     </>
   );
 };
