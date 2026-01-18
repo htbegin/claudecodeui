@@ -9,6 +9,7 @@ import { addProjectManually } from '../projects.js';
 import { queryClaudeSDK } from '../claude-sdk.js';
 import { spawnCursor } from '../cursor-cli.js';
 import { queryCodex } from '../openai-codex.js';
+import { queryGeminiSDK } from '../gemini-cli-sdk.js';
 import { Octokit } from '@octokit/rest';
 import { CLAUDE_MODELS, CURSOR_MODELS, CODEX_MODELS } from '../../shared/modelConstants.js';
 
@@ -628,7 +629,7 @@ class ResponseCollector {
  *                          - Source for auto-generated branch names (if createBranch=true and no branchName)
  *                          - Fallback for PR title if no commits are made
  *
- * @param {string} provider - (Optional) AI provider to use. Options: 'claude' | 'cursor'
+ * @param {string} provider - (Optional) AI provider to use. Options: 'claude' | 'cursor' | 'codex' | 'gemini'
  *                           Default: 'claude'
  *
  * @param {boolean} stream - (Optional) Enable Server-Sent Events (SSE) streaming for real-time updates.
@@ -644,6 +645,8 @@ class ResponseCollector {
  *                                       'gpt-5.1-codex', 'gpt-5.1-codex-high', 'gpt-5.1-codex-max',
  *                                       'gpt-5.1-codex-max-high', 'opus-4.1', 'grok', and thinking variants
  *                        Codex models: 'gpt-5.2' (default), 'gpt-5.1-codex-max', 'o3', 'o4-mini'
+ *                        Gemini models: 'gemini-2.5-pro' (default), 'gemini-2.5-flash', 'gemini-1.5-pro',
+ *                                       'gemini-1.5-flash'
  *
  * @param {boolean} cleanup - (Optional) Auto-cleanup project directory after completion.
  *                           Default: true
@@ -746,7 +749,7 @@ class ResponseCollector {
  * Input Validations (400 Bad Request):
  *   - Either githubUrl OR projectPath must be provided (not neither)
  *   - message must be non-empty string
- *   - provider must be 'claude' or 'cursor'
+ *   - provider must be 'claude', 'cursor', 'codex', or 'gemini'
  *   - createBranch/createPR requires githubUrl OR projectPath (not neither)
  *   - branchName must pass Git naming rules (if provided)
  *
@@ -854,8 +857,8 @@ router.post('/', validateExternalApiKey, async (req, res) => {
     return res.status(400).json({ error: 'message is required' });
   }
 
-  if (!['claude', 'cursor', 'codex'].includes(provider)) {
-    return res.status(400).json({ error: 'provider must be "claude", "cursor", or "codex"' });
+  if (!['claude', 'cursor', 'codex', 'gemini'].includes(provider)) {
+    return res.status(400).json({ error: 'provider must be "claude", "cursor", "codex", or "gemini"' });
   }
 
   // Validate GitHub branch/PR creation requirements
@@ -968,6 +971,16 @@ router.post('/', validateExternalApiKey, async (req, res) => {
         cwd: finalProjectPath,
         sessionId: null,
         model: model || CODEX_MODELS.DEFAULT,
+        permissionMode: 'bypassPermissions'
+      }, writer);
+    } else if (provider === 'gemini') {
+      console.log('✨ Starting Gemini CLI SDK session');
+
+      await queryGeminiSDK(message.trim(), {
+        projectPath: finalProjectPath,
+        cwd: finalProjectPath,
+        sessionId: null,
+        model: model,
         permissionMode: 'bypassPermissions'
       }, writer);
     }

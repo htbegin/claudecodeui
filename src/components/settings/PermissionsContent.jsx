@@ -596,6 +596,103 @@ function CodexPermissions({ permissionMode, setPermissionMode }) {
   );
 }
 
+// Gemini Permissions
+function GeminiPermissions({ permissionMode, setPermissionMode }) {
+  return (
+    <div className="space-y-6">
+      <div className="space-y-4">
+        <div className="flex items-center gap-3">
+          <Shield className="w-5 h-5 text-indigo-500" />
+          <h3 className="text-lg font-medium text-foreground">
+            Permission Mode
+          </h3>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Controls how Gemini CLI handles edits and command execution.
+        </p>
+
+        <div
+          className={`border rounded-lg p-4 cursor-pointer transition-all ${
+            permissionMode === 'default'
+              ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-300 dark:border-indigo-600'
+              : 'bg-gray-50 dark:bg-gray-900/50 border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+          }`}
+          onClick={() => setPermissionMode('default')}
+        >
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="radio"
+              name="geminiPermissionMode"
+              checked={permissionMode === 'default'}
+              onChange={() => setPermissionMode('default')}
+              className="mt-1 w-4 h-4 text-indigo-600"
+            />
+            <div>
+              <div className="font-medium text-foreground">Default</div>
+              <div className="text-sm text-muted-foreground">
+                Standard Gemini CLI behavior with default safety checks.
+              </div>
+            </div>
+          </label>
+        </div>
+
+        <div
+          className={`border rounded-lg p-4 cursor-pointer transition-all ${
+            permissionMode === 'acceptEdits'
+              ? 'bg-green-50 dark:bg-green-900/20 border-green-400 dark:border-green-600'
+              : 'bg-gray-50 dark:bg-gray-900/50 border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+          }`}
+          onClick={() => setPermissionMode('acceptEdits')}
+        >
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="radio"
+              name="geminiPermissionMode"
+              checked={permissionMode === 'acceptEdits'}
+              onChange={() => setPermissionMode('acceptEdits')}
+              className="mt-1 w-4 h-4 text-green-600"
+            />
+            <div>
+              <div className="font-medium text-green-900 dark:text-green-100">Accept Edits</div>
+              <div className="text-sm text-green-700 dark:text-green-300">
+                Automatically apply edits within the workspace.
+              </div>
+            </div>
+          </label>
+        </div>
+
+        <div
+          className={`border rounded-lg p-4 cursor-pointer transition-all ${
+            permissionMode === 'bypassPermissions'
+              ? 'bg-orange-50 dark:bg-orange-900/20 border-orange-400 dark:border-orange-600'
+              : 'bg-gray-50 dark:bg-gray-900/50 border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+          }`}
+          onClick={() => setPermissionMode('bypassPermissions')}
+        >
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="radio"
+              name="geminiPermissionMode"
+              checked={permissionMode === 'bypassPermissions'}
+              onChange={() => setPermissionMode('bypassPermissions')}
+              className="mt-1 w-4 h-4 text-orange-600"
+            />
+            <div>
+              <div className="font-medium text-orange-900 dark:text-orange-100 flex items-center gap-2">
+                Bypass Permissions
+                <AlertTriangle className="w-4 h-4" />
+              </div>
+              <div className="text-sm text-orange-700 dark:text-orange-300">
+                Full CLI access with no approval prompts. Use cautiously.
+              </div>
+            </div>
+          </label>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Main component
 export default function PermissionsContent({ agent, ...props }) {
   if (agent === 'claude') {
@@ -606,6 +703,9 @@ export default function PermissionsContent({ agent, ...props }) {
   }
   if (agent === 'codex') {
     return <CodexPermissions {...props} />;
+  }
+  if (agent === 'gemini') {
+    return <GeminiPermissions {...props} />;
   }
   return null;
 }

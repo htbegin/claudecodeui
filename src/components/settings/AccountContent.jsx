@@ -3,6 +3,7 @@ import { Copy, RefreshCw } from 'lucide-react';
 import ClaudeLogo from '../ClaudeLogo';
 import CursorLogo from '../CursorLogo';
 import CodexLogo from '../CodexLogo';
+import GeminiLogo from '../GeminiLogo';
 
 const agentConfig = {
   claude: {
@@ -34,6 +35,16 @@ const agentConfig = {
     textClass: 'text-gray-900 dark:text-gray-100',
     subtextClass: 'text-gray-700 dark:text-gray-300',
     buttonClass: 'bg-gray-800 hover:bg-gray-900 dark:bg-gray-700 dark:hover:bg-gray-600',
+  },
+  gemini: {
+    name: 'Gemini',
+    description: 'Google Gemini CLI assistant',
+    Logo: GeminiLogo,
+    bgClass: 'bg-indigo-50 dark:bg-indigo-900/20',
+    borderClass: 'border-indigo-200 dark:border-indigo-800',
+    textClass: 'text-indigo-900 dark:text-indigo-100',
+    subtextClass: 'text-indigo-700 dark:text-indigo-300',
+    buttonClass: 'bg-indigo-600 hover:bg-indigo-700',
   },
 };
 

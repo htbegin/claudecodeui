@@ -225,13 +225,15 @@ function Sidebar({
     const claudeSessions = [...(project.sessions || []), ...(additionalSessions[project.name] || [])].map(s => ({ ...s, __provider: 'claude' }));
     const cursorSessions = (project.cursorSessions || []).map(s => ({ ...s, __provider: 'cursor' }));
     const codexSessions = (project.codexSessions || []).map(s => ({ ...s, __provider: 'codex' }));
+    const geminiSessions = (project.geminiSessions || []).map(s => ({ ...s, __provider: 'gemini' }));
     // Sort by most recent activity/date
     const normalizeDate = (s) => {
       if (s.__provider === 'cursor') return new Date(s.createdAt);
       if (s.__provider === 'codex') return new Date(s.createdAt || s.lastActivity);
+      if (s.__provider === 'gemini') return new Date(s.createdAt || s.lastActivity);
       return new Date(s.lastActivity);
     };
-    return [...claudeSessions, ...cursorSessions, ...codexSessions].sort((a, b) => normalizeDate(b) - normalizeDate(a));
+    return [...claudeSessions, ...cursorSessions, ...codexSessions, ...geminiSessions].sort((a, b) => normalizeDate(b) - normalizeDate(a));
   };
 
   // Helper function to get the last activity date for a project
@@ -1031,11 +1033,13 @@ function Sidebar({
                           // Handle Claude, Cursor, and Codex session formats
                           const isCursorSession = session.__provider === 'cursor';
                           const isCodexSession = session.__provider === 'codex';
+                          const isGeminiSession = session.__provider === 'gemini';
 
                           // Calculate if session is active (within last 10 minutes)
                           const getSessionDate = () => {
                             if (isCursorSession) return new Date(session.createdAt);
                             if (isCodexSession) return new Date(session.createdAt || session.lastActivity);
+                            if (isGeminiSession) return new Date(session.createdAt || session.lastActivity);
                             return new Date(session.lastActivity);
                           };
                           const sessionDate = getSessionDate();
@@ -1046,12 +1050,14 @@ function Sidebar({
                           const getSessionName = () => {
                             if (isCursorSession) return session.name || 'Untitled Session';
                             if (isCodexSession) return session.summary || session.name || 'Codex Session';
+                            if (isGeminiSession) return session.summary || session.name || 'Gemini Session';
                             return session.summary || 'New Session';
                           };
                           const sessionName = getSessionName();
                           const getSessionTime = () => {
                             if (isCursorSession) return session.createdAt;
                             if (isCodexSession) return session.createdAt || session.lastActivity;
+                            if (isGeminiSession) return session.createdAt || session.lastActivity;
                             return session.lastActivity;
                           };
                           const sessionTime = getSessionTime();

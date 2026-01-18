@@ -59,6 +59,7 @@ import { getProjects, getSessions, getSessionMessages, renameProject, deleteSess
 import { queryClaudeSDK, abortClaudeSDKSession, isClaudeSDKSessionActive, getActiveClaudeSDKSessions } from './claude-sdk.js';
 import { spawnCursor, abortCursorSession, isCursorSessionActive, getActiveCursorSessions } from './cursor-cli.js';
 import { queryCodex, abortCodexSession, isCodexSessionActive, getActiveCodexSessions } from './openai-codex.js';
+import { queryGeminiSDK, abortGeminiSession, isGeminiSessionActive, getActiveGeminiSessions } from './gemini-cli-sdk.js';
 import gitRoutes from './routes/git.js';
 import authRoutes from './routes/auth.js';
 import mcpRoutes from './routes/mcp.js';
@@ -314,6 +315,20 @@ app.post('/api/realtime/command', authenticateToken, async (req, res) => {
             return res.status(202).json({ success: true });
         }
 
+        if (type === 'gemini-command') {
+            void (async () => {
+                try {
+                    await queryGeminiSDK(message.command, message.options, client);
+                } catch (error) {
+                    client.send({
+                        type: 'gemini-error',
+                        error: error.message
+                    });
+                }
+            })();
+            return res.status(202).json({ success: true });
+        }
+
         if (type === 'cursor-resume') {
             void (async () => {
                 try {
@@ -340,6 +355,8 @@ app.post('/api/realtime/command', authenticateToken, async (req, res) => {
                 success = abortCursorSession(message.sessionId);
             } else if (provider === 'codex') {
                 success = abortCodexSession(message.sessionId);
+            } else if (provider === 'gemini') {
+                success = abortGeminiSession(message.sessionId);
             } else {
                 success = await abortClaudeSDKSession(message.sessionId);
             }
@@ -374,6 +391,8 @@ app.post('/api/realtime/command', authenticateToken, async (req, res) => {
                 isActive = isCursorSessionActive(sessionId);
             } else if (provider === 'codex') {
                 isActive = isCodexSessionActive(sessionId);
+            } else if (provider === 'gemini') {
+                isActive = isGeminiSessionActive(sessionId);
             } else {
                 isActive = isClaudeSDKSessionActive(sessionId);
             }
@@ -392,7 +411,8 @@ app.post('/api/realtime/command', authenticateToken, async (req, res) => {
             const activeSessions = {
                 claude: getActiveClaudeSDKSessions(),
                 cursor: getActiveCursorSessions(),
-                codex: getActiveCodexSessions()
+                codex: getActiveCodexSessions(),
+                gemini: getActiveGeminiSessions()
             };
             client.send({
                 type: 'active-sessions',
