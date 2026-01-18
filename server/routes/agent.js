@@ -9,6 +9,7 @@ import { addProjectManually } from '../projects.js';
 import { queryClaudeSDK } from '../claude-sdk.js';
 import { spawnCursor } from '../cursor-cli.js';
 import { queryCodex } from '../openai-codex.js';
+import { queryGemini } from '../gemini-sdk.js';
 import { Octokit } from '@octokit/rest';
 
 const router = express.Router();
@@ -626,7 +627,7 @@ class ResponseCollector {
  *                          - Source for auto-generated branch names (if createBranch=true and no branchName)
  *                          - Fallback for PR title if no commits are made
  *
- * @param {string} provider - (Optional) AI provider to use. Options: 'claude' | 'cursor'
+ * @param {string} provider - (Optional) AI provider to use. Options: 'claude' | 'cursor' | 'codex' | 'gemini'
  *                           Default: 'claude'
  *
  * @param {boolean} stream - (Optional) Enable Server-Sent Events (SSE) streaming for real-time updates.
@@ -634,8 +635,8 @@ class ResponseCollector {
  *                          - true: Returns text/event-stream with incremental updates
  *                          - false: Returns complete JSON response after completion
  *
- * @param {string} model - (Optional) Model identifier for Cursor provider.
- *                        Only applicable when provider='cursor'.
+ * @param {string} model - (Optional) Model identifier for the provider.
+ *                        Applicable for provider='cursor', 'codex', or 'gemini'.
  *                        Examples: 'gpt-4', 'claude-3-opus', etc.
  *
  * @param {boolean} cleanup - (Optional) Auto-cleanup project directory after completion.
@@ -739,7 +740,7 @@ class ResponseCollector {
  * Input Validations (400 Bad Request):
  *   - Either githubUrl OR projectPath must be provided (not neither)
  *   - message must be non-empty string
- *   - provider must be 'claude' or 'cursor'
+ *   - provider must be 'claude', 'cursor', 'codex', or 'gemini'
  *   - createBranch/createPR requires githubUrl OR projectPath (not neither)
  *   - branchName must pass Git naming rules (if provided)
  *
@@ -847,8 +848,8 @@ router.post('/', validateExternalApiKey, async (req, res) => {
     return res.status(400).json({ error: 'message is required' });
   }
 
-  if (!['claude', 'cursor', 'codex'].includes(provider)) {
-    return res.status(400).json({ error: 'provider must be "claude", "cursor", or "codex"' });
+  if (!['claude', 'cursor', 'codex', 'gemini'].includes(provider)) {
+    return res.status(400).json({ error: 'provider must be "claude", "cursor", "codex", or "gemini"' });
   }
 
   // Validate GitHub branch/PR creation requirements
@@ -960,6 +961,16 @@ router.post('/', validateExternalApiKey, async (req, res) => {
         cwd: finalProjectPath,
         sessionId: null,
         model: model || 'gpt-5.2',
+        permissionMode: 'bypassPermissions'
+      }, writer);
+    } else if (provider === 'gemini') {
+      console.log('✨ Starting Gemini SDK session');
+
+      await queryGemini(message.trim(), {
+        projectPath: finalProjectPath,
+        cwd: finalProjectPath,
+        sessionId: null,
+        model: model || 'gemini-2.5-pro',
         permissionMode: 'bypassPermissions'
       }, writer);
     }

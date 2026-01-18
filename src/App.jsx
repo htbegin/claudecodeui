@@ -234,7 +234,8 @@ function AppContent() {
               const allSessions = [
                 ...(updatedSelectedProject.sessions || []),
                 ...(updatedSelectedProject.codexSessions || []),
-                ...(updatedSelectedProject.cursorSessions || [])
+                ...(updatedSelectedProject.cursorSessions || []),
+                ...(updatedSelectedProject.geminiSessions || [])
               ];
               const updatedSelectedSession = allSessions.find(s => s.id === selectedSession.id);
               if (!updatedSelectedSession) {
@@ -273,7 +274,7 @@ function AppContent() {
           project.cursorSessions = [];
         }
       }
-      
+
       // Optimize to preserve object references when data hasn't changed
       setProjects(prevProjects => {
         // If no previous projects, just set the new data
@@ -293,7 +294,8 @@ function AppContent() {
             newProject.fullPath !== prevProject.fullPath ||
             JSON.stringify(newProject.sessionMeta) !== JSON.stringify(prevProject.sessionMeta) ||
             JSON.stringify(newProject.sessions) !== JSON.stringify(prevProject.sessions) ||
-            JSON.stringify(newProject.cursorSessions) !== JSON.stringify(prevProject.cursorSessions)
+            JSON.stringify(newProject.cursorSessions) !== JSON.stringify(prevProject.cursorSessions) ||
+            JSON.stringify(newProject.geminiSessions) !== JSON.stringify(prevProject.geminiSessions)
           );
         }) || data.length !== prevProjects.length;
         
@@ -340,6 +342,15 @@ function AppContent() {
         if (cSession) {
           setSelectedProject(project);
           setSelectedSession({ ...cSession, __provider: 'cursor' });
+          if (shouldSwitchTab) {
+            setActiveTab('chat');
+          }
+          return;
+        }
+        const gSession = project.geminiSessions?.find(s => s.id === sessionId);
+        if (gSession) {
+          setSelectedProject(project);
+          setSelectedSession({ ...gSession, __provider: 'gemini' });
           if (shouldSwitchTab) {
             setActiveTab('chat');
           }

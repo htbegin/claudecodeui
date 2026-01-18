@@ -65,6 +65,7 @@ import crypto from 'crypto';
 import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
 import os from 'os';
+import { getGeminiSessions } from './gemini-sdk.js';
 
 // Import TaskMaster detection functions
 async function detectTaskMasterFolder(projectPath) {
@@ -434,6 +435,14 @@ async function getProjects() {
           project.codexSessions = [];
         }
 
+        // Also fetch Gemini sessions for this project
+        try {
+          project.geminiSessions = getGeminiSessions(actualProjectDir);
+        } catch (e) {
+          console.warn(`Could not load Gemini sessions for project ${entry.name}:`, e.message);
+          project.geminiSessions = [];
+        }
+
         // Add TaskMaster detection
         try {
           const taskMasterResult = await detectTaskMasterFolder(actualProjectDir);
@@ -487,7 +496,8 @@ async function getProjects() {
           isManuallyAdded: true,
           sessions: [],
           cursorSessions: [],
-          codexSessions: []
+          codexSessions: [],
+          geminiSessions: []
         };
 
       // Try to fetch Cursor sessions for manual projects too
@@ -502,6 +512,13 @@ async function getProjects() {
         project.codexSessions = await getCodexSessions(actualProjectDir);
       } catch (e) {
         console.warn(`Could not load Codex sessions for manual project ${projectName}:`, e.message);
+      }
+
+      // Try to fetch Gemini sessions for manual projects too
+      try {
+        project.geminiSessions = getGeminiSessions(actualProjectDir);
+      } catch (e) {
+        console.warn(`Could not load Gemini sessions for manual project ${projectName}:`, e.message);
       }
 
       // Add TaskMaster detection for manual projects

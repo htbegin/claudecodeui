@@ -3,6 +3,7 @@ import { ChevronRight, ChevronLeft, Check, GitBranch, User, Mail, Copy, RefreshC
 import ClaudeLogo from './ClaudeLogo';
 import CursorLogo from './CursorLogo';
 import CodexLogo from './CodexLogo';
+import GeminiLogo from './GeminiLogo';
 import { authenticatedFetch } from '../utils/api';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -34,6 +35,13 @@ const Onboarding = ({ onComplete }) => {
     error: null
   });
 
+  const [geminiAuthStatus, setGeminiAuthStatus] = useState({
+    authenticated: false,
+    email: null,
+    loading: true,
+    error: null
+  });
+
   const { user } = useAuth();
 
   useEffect(() => {
@@ -57,6 +65,7 @@ const Onboarding = ({ onComplete }) => {
     checkClaudeAuthStatus();
     checkCursorAuthStatus();
     checkCodexAuthStatus();
+    checkGeminiAuthStatus();
   }, []);
 
   const checkClaudeAuthStatus = async () => {
@@ -149,10 +158,41 @@ const Onboarding = ({ onComplete }) => {
     }
   };
 
+  const checkGeminiAuthStatus = async () => {
+    try {
+      const response = await authenticatedFetch('/api/cli/gemini/status');
+      if (response.ok) {
+        const data = await response.json();
+        setGeminiAuthStatus({
+          authenticated: data.authenticated,
+          email: data.email,
+          loading: false,
+          error: data.error || null
+        });
+      } else {
+        setGeminiAuthStatus({
+          authenticated: false,
+          email: null,
+          loading: false,
+          error: 'Failed to check authentication status'
+        });
+      }
+    } catch (error) {
+      console.error('Error checking Gemini auth status:', error);
+      setGeminiAuthStatus({
+        authenticated: false,
+        email: null,
+        loading: false,
+        error: error.message
+      });
+    }
+  };
+
   const loginCommands = {
     claude: 'claude setup-token --dangerously-skip-permissions',
     cursor: 'cursor-agent login',
-    codex: 'codex login'
+    codex: 'codex login',
+    gemini: 'gemini auth login'
   };
 
   const handleCopyCommand = async (command) => {
@@ -468,6 +508,58 @@ const Onboarding = ({ onComplete }) => {
                       )}
                       <button
                         onClick={checkCodexAuthStatus}
+                        className="inline-flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        Refresh status
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Gemini */}
+              <div className={`border rounded-lg p-4 transition-colors ${
+                geminiAuthStatus.authenticated
+                  ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800'
+                  : 'border-border bg-card'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-emerald-100 dark:bg-emerald-900/30 rounded-full flex items-center justify-center">
+                      <GeminiLogo className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="font-medium text-foreground flex items-center gap-2">
+                        Gemini
+                        {geminiAuthStatus.authenticated && <Check className="w-4 h-4 text-green-500" />}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {geminiAuthStatus.loading ? 'Checking...' :
+                         geminiAuthStatus.authenticated ? geminiAuthStatus.email || 'Connected' : 'Not connected'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                {!geminiAuthStatus.loading && (
+                  <div className="mt-3 space-y-2">
+                    {!geminiAuthStatus.authenticated && (
+                      <div className="bg-white/70 dark:bg-gray-900/60 border border-gray-200 dark:border-gray-700 rounded-md px-3 py-2 font-mono text-xs text-gray-700 dark:text-gray-200 break-all">
+                        {loginCommands.gemini}
+                      </div>
+                    )}
+                    <div className="flex flex-wrap gap-2">
+                      {!geminiAuthStatus.authenticated && (
+                        <button
+                          onClick={() => handleCopyCommand(loginCommands.gemini)}
+                          className="inline-flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-md bg-emerald-600 hover:bg-emerald-700 text-white transition-colors"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                          Copy command
+                        </button>
+                      )}
+                      <button
+                        onClick={checkGeminiAuthStatus}
                         className="inline-flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                       >
                         <RefreshCw className="w-3.5 h-3.5" />

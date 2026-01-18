@@ -596,6 +596,23 @@ function CodexPermissions({ permissionMode, setPermissionMode }) {
   );
 }
 
+function GeminiPermissions() {
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-3">
+        <AlertTriangle className="w-5 h-5 text-emerald-500" />
+        <h3 className="text-lg font-medium text-foreground">
+          Permission Settings
+        </h3>
+      </div>
+      <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg p-4 text-sm text-emerald-900 dark:text-emerald-100">
+        Gemini CLI permissions are configured within the Gemini CLI settings.
+        Use the Gemini CLI configuration to manage approval policies and tool permissions.
+      </div>
+    </div>
+  );
+}
+
 // Main component
 export default function PermissionsContent({ agent, ...props }) {
   if (agent === 'claude') {
@@ -606,6 +623,9 @@ export default function PermissionsContent({ agent, ...props }) {
   }
   if (agent === 'codex') {
     return <CodexPermissions {...props} />;
+  }
+  if (agent === 'gemini') {
+    return <GeminiPermissions />;
   }
   return null;
 }

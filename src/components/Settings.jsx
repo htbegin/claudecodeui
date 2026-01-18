@@ -116,6 +116,12 @@ function Settings({ isOpen, onClose, projects = [], initialTab = 'agents' }) {
     loading: true,
     error: null
   });
+  const [geminiAuthStatus, setGeminiAuthStatus] = useState({
+    authenticated: false,
+    email: null,
+    loading: true,
+    error: null
+  });
 
   // Common tool patterns for Claude
   const commonTools = [
@@ -492,6 +498,7 @@ function Settings({ isOpen, onClose, projects = [], initialTab = 'agents' }) {
       checkClaudeAuthStatus();
       checkCursorAuthStatus();
       checkCodexAuthStatus();
+      checkGeminiAuthStatus();
       setActiveTab(initialTab);
     }
   }, [isOpen, initialTab]);
@@ -677,10 +684,42 @@ function Settings({ isOpen, onClose, projects = [], initialTab = 'agents' }) {
     }
   };
 
+  const checkGeminiAuthStatus = async () => {
+    try {
+      const response = await authenticatedFetch('/api/cli/gemini/status');
+
+      if (response.ok) {
+        const data = await response.json();
+        setGeminiAuthStatus({
+          authenticated: data.authenticated,
+          email: data.email,
+          loading: false,
+          error: data.error || null
+        });
+      } else {
+        setGeminiAuthStatus({
+          authenticated: false,
+          email: null,
+          loading: false,
+          error: 'Failed to check authentication status'
+        });
+      }
+    } catch (error) {
+      console.error('Error checking Gemini auth status:', error);
+      setGeminiAuthStatus({
+        authenticated: false,
+        email: null,
+        loading: false,
+        error: error.message
+      });
+    }
+  };
+
   const loginCommands = {
     claude: 'claude setup-token --dangerously-skip-permissions',
     cursor: 'cursor-agent login',
-    codex: 'codex login'
+    codex: 'codex login',
+    gemini: 'gemini auth login'
   };
 
   const handleCopyLoginCommand = async (command) => {
@@ -1251,6 +1290,13 @@ function Settings({ isOpen, onClose, projects = [], initialTab = 'agents' }) {
                       onClick={() => setSelectedAgent('codex')}
                       isMobile={true}
                     />
+                    <AgentListItem
+                      agentId="gemini"
+                      authStatus={geminiAuthStatus}
+                      isSelected={selectedAgent === 'gemini'}
+                      onClick={() => setSelectedAgent('gemini')}
+                      isMobile={true}
+                    />
                   </div>
                 </div>
 
@@ -1274,6 +1320,12 @@ function Settings({ isOpen, onClose, projects = [], initialTab = 'agents' }) {
                       authStatus={codexAuthStatus}
                       isSelected={selectedAgent === 'codex'}
                       onClick={() => setSelectedAgent('codex')}
+                    />
+                    <AgentListItem
+                      agentId="gemini"
+                      authStatus={geminiAuthStatus}
+                      isSelected={selectedAgent === 'gemini'}
+                      onClick={() => setSelectedAgent('gemini')}
                     />
                   </div>
                 </div>
@@ -1325,14 +1377,16 @@ function Settings({ isOpen, onClose, projects = [], initialTab = 'agents' }) {
                         authStatus={
                           selectedAgent === 'claude' ? claudeAuthStatus :
                           selectedAgent === 'cursor' ? cursorAuthStatus :
-                          codexAuthStatus
+                          selectedAgent === 'codex' ? codexAuthStatus :
+                          geminiAuthStatus
                         }
                         loginCommand={loginCommands[selectedAgent]}
                         onCopyCommand={handleCopyLoginCommand}
                         onRefresh={
                           selectedAgent === 'claude' ? checkClaudeAuthStatus :
                           selectedAgent === 'cursor' ? checkCursorAuthStatus :
-                          checkCodexAuthStatus
+                          selectedAgent === 'codex' ? checkCodexAuthStatus :
+                          checkGeminiAuthStatus
                         }
                       />
                     )}
@@ -1378,6 +1432,12 @@ function Settings({ isOpen, onClose, projects = [], initialTab = 'agents' }) {
                       />
                     )}
 
+                    {selectedCategory === 'permissions' && selectedAgent === 'gemini' && (
+                      <PermissionsContent
+                        agent="gemini"
+                      />
+                    )}
+
                     {/* MCP Servers Category */}
                     {selectedCategory === 'mcp' && selectedAgent === 'claude' && (
                       <McpServersContent
@@ -1411,6 +1471,12 @@ function Settings({ isOpen, onClose, projects = [], initialTab = 'agents' }) {
                         onAdd={() => openCodexMcpForm()}
                         onEdit={(server) => openCodexMcpForm(server)}
                         onDelete={(serverId) => handleCodexMcpDelete(serverId)}
+                      />
+                    )}
+
+                    {selectedCategory === 'mcp' && selectedAgent === 'gemini' && (
+                      <McpServersContent
+                        agent="gemini"
                       />
                     )}
                   </div>

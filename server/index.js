@@ -59,6 +59,7 @@ import { getProjects, getSessions, getSessionMessages, renameProject, deleteSess
 import { queryClaudeSDK, abortClaudeSDKSession, isClaudeSDKSessionActive, getActiveClaudeSDKSessions } from './claude-sdk.js';
 import { spawnCursor, abortCursorSession, isCursorSessionActive, getActiveCursorSessions } from './cursor-cli.js';
 import { queryCodex, abortCodexSession, isCodexSessionActive, getActiveCodexSessions } from './openai-codex.js';
+import { queryGemini, abortGeminiSession, isGeminiSessionActive, getActiveGeminiSessions } from './gemini-sdk.js';
 import gitRoutes from './routes/git.js';
 import authRoutes from './routes/auth.js';
 import mcpRoutes from './routes/mcp.js';
@@ -72,6 +73,7 @@ import projectsRoutes from './routes/projects.js';
 import cliAuthRoutes from './routes/cli-auth.js';
 import userRoutes from './routes/user.js';
 import codexRoutes from './routes/codex.js';
+import geminiRoutes from './routes/gemini.js';
 import { initializeDatabase } from './database/db.js';
 import { validateApiKey, authenticateToken } from './middleware/auth.js';
 import { registerSseClient, removeSseClient, getSseClient, broadcastSseMessage } from './utils/sse.js';
@@ -222,6 +224,9 @@ app.use('/api/user', authenticateToken, userRoutes);
 // Codex API Routes (protected)
 app.use('/api/codex', authenticateToken, codexRoutes);
 
+// Gemini API Routes (protected)
+app.use('/api/gemini', authenticateToken, geminiRoutes);
+
 // Agent API Routes (uses API key authentication)
 app.use('/api/agent', agentRoutes);
 
@@ -314,6 +319,20 @@ app.post('/api/realtime/command', authenticateToken, async (req, res) => {
             return res.status(202).json({ success: true });
         }
 
+        if (type === 'gemini-command') {
+            void (async () => {
+                try {
+                    await queryGemini(message.command, message.options, client);
+                } catch (error) {
+                    client.send({
+                        type: 'gemini-error',
+                        error: error.message
+                    });
+                }
+            })();
+            return res.status(202).json({ success: true });
+        }
+
         if (type === 'cursor-resume') {
             void (async () => {
                 try {
@@ -340,6 +359,8 @@ app.post('/api/realtime/command', authenticateToken, async (req, res) => {
                 success = abortCursorSession(message.sessionId);
             } else if (provider === 'codex') {
                 success = abortCodexSession(message.sessionId);
+            } else if (provider === 'gemini') {
+                success = abortGeminiSession(message.sessionId);
             } else {
                 success = await abortClaudeSDKSession(message.sessionId);
             }
@@ -374,6 +395,8 @@ app.post('/api/realtime/command', authenticateToken, async (req, res) => {
                 isActive = isCursorSessionActive(sessionId);
             } else if (provider === 'codex') {
                 isActive = isCodexSessionActive(sessionId);
+            } else if (provider === 'gemini') {
+                isActive = isGeminiSessionActive(sessionId);
             } else {
                 isActive = isClaudeSDKSessionActive(sessionId);
             }
@@ -392,7 +415,8 @@ app.post('/api/realtime/command', authenticateToken, async (req, res) => {
             const activeSessions = {
                 claude: getActiveClaudeSDKSessions(),
                 cursor: getActiveCursorSessions(),
-                codex: getActiveCodexSessions()
+                codex: getActiveCodexSessions(),
+                gemini: getActiveGeminiSessions()
             };
             client.send({
                 type: 'active-sessions',

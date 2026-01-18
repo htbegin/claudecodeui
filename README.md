@@ -4,7 +4,7 @@
 </div>
 
 
-A desktop and mobile UI for [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Cursor CLI](https://docs.cursor.com/en/cli/overview) and [Codex](https://developers.openai.com/codex). You can use it locally or remotely to view your active projects and sessions in Claude Code, Cursor, or Codex and make changes to them from everywhere (mobile or desktop). This gives you a proper interface that works everywhere. 
+A desktop and mobile UI for [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Cursor CLI](https://docs.cursor.com/en/cli/overview), [Codex](https://developers.openai.com/codex), and Gemini CLI. You can use it locally or remotely to view your active projects and sessions in Claude Code, Cursor, Codex, or Gemini and make changes to them from everywhere (mobile or desktop). This gives you a proper interface that works everywhere. 
 
 ## Screenshots
 
@@ -30,7 +30,7 @@ A desktop and mobile UI for [Claude Code](https://docs.anthropic.com/en/docs/cla
 <h3>CLI Selection</h3>
 <img src="public/screenshots/cli-selection.png" alt="CLI Selection" width="400">
 <br>
-<em>Select between Claude Code, Cursor CLI and Codex</em>
+<em>Select between Claude Code, Cursor CLI, Codex, and Gemini CLI</em>
 </td>
 </tr>
 </table>
@@ -41,14 +41,14 @@ A desktop and mobile UI for [Claude Code](https://docs.anthropic.com/en/docs/cla
 
 ## Features
 
-- **Responsive Design** - Works seamlessly across desktop, tablet, and mobile so you can also use Claude Code, Cursor, or Codex from mobile 
-- **Interactive Chat Interface** - Built-in chat interface for seamless communication with Claude Code, Cursor, or Codex
-- **Integrated Shell Terminal** - Direct access to Claude Code, Cursor CLI, or Codex through built-in shell functionality
+- **Responsive Design** - Works seamlessly across desktop, tablet, and mobile so you can also use Claude Code, Cursor, Codex, or Gemini from mobile 
+- **Interactive Chat Interface** - Built-in chat interface for seamless communication with Claude Code, Cursor, Codex, or Gemini
+- **Integrated Shell Terminal** - Direct access to Claude Code, Cursor CLI, Codex, or Gemini through built-in shell functionality
 - **File Explorer** - Interactive file tree with syntax highlighting and live editing
 - **Git Explorer** - View, stage and commit your changes. You can also switch branches 
 - **Session Management** - Resume conversations, manage multiple sessions, and track history
 - **TaskMaster AI Integration** *(Optional)* - Advanced project management with AI-powered task planning, PRD parsing, and workflow automation
-- **Model Compatibility** - Works with Claude Sonnet 4.5, Opus 4.5, and GPT-5.2 
+- **Model Compatibility** - Works with Claude Sonnet 4.5, Opus 4.5, GPT-5.2, and Gemini 2.5 
 
 
 ## Quick Start
@@ -58,7 +58,9 @@ A desktop and mobile UI for [Claude Code](https://docs.anthropic.com/en/docs/cla
 - [Node.js](https://nodejs.org/) v20 or higher
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and configured, and/or
 - [Cursor CLI](https://docs.cursor.com/en/cli/overview) installed and configured, and/or
-- [Codex](https://developers.openai.com/codex) installed and configured
+- [Codex](https://developers.openai.com/codex) installed and configured, and/or
+- Gemini CLI installed and configured
+- Gemini CLI SDK available in the server runtime (`npm install @google/gemini-cli-sdk`)
 
 ### One-click Operation (Recommended)
 
