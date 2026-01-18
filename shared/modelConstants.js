@@ -65,3 +65,17 @@ export const CODEX_MODELS = {
 
   DEFAULT: 'gpt-5.2-codex'
 };
+
+/**
+ * Gemini (Google) Models
+ */
+export const GEMINI_MODELS = {
+  OPTIONS: [
+    { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+    { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+    { value: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro' },
+    { value: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash' }
+  ],
+
+  DEFAULT: 'gemini-2.5-pro'
+};

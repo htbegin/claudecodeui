@@ -74,6 +74,25 @@ router.get('/codex/status', async (req, res) => {
   }
 });
 
+router.get('/gemini/status', async (req, res) => {
+  try {
+    const result = await checkGeminiCredentials();
+
+    res.json({
+      authenticated: result.authenticated,
+      email: result.email,
+      error: result.error
+    });
+  } catch (error) {
+    console.error('Error checking Gemini auth status:', error);
+    res.status(500).json({
+      authenticated: false,
+      email: null,
+      error: error.message
+    });
+  }
+});
+
 async function checkClaudeCredentials() {
   try {
     const credPath = path.join(os.homedir(), '.claude', '.credentials.json');
@@ -252,6 +271,54 @@ async function checkCodexCredentials() {
         error: 'Codex not configured'
       };
     }
+    return {
+      authenticated: false,
+      email: null,
+      error: error.message
+    };
+  }
+}
+
+async function checkGeminiCredentials() {
+  try {
+    const envApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.GOOGLE_GENAI_API_KEY;
+    if (envApiKey) {
+      return {
+        authenticated: true,
+        email: 'API Key Auth'
+      };
+    }
+
+    const possiblePaths = [
+      path.join(os.homedir(), '.gemini', 'credentials.json'),
+      path.join(os.homedir(), '.config', 'gemini', 'credentials.json'),
+      path.join(os.homedir(), '.config', 'gemini-cli', 'credentials.json')
+    ];
+
+    for (const credentialsPath of possiblePaths) {
+      try {
+        const content = await fs.readFile(credentialsPath, 'utf8');
+        const creds = JSON.parse(content);
+
+        if (creds.apiKey || creds.access_token || creds.token) {
+          return {
+            authenticated: true,
+            email: creds.email || creds.user || 'Authenticated'
+          };
+        }
+      } catch (error) {
+        if (error.code !== 'ENOENT') {
+          console.warn('Failed to read Gemini credentials:', error.message);
+        }
+      }
+    }
+
+    return {
+      authenticated: false,
+      email: null,
+      error: 'Gemini not configured'
+    };
+  } catch (error) {
     return {
       authenticated: false,
       email: null,
