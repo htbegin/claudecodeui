@@ -26,6 +26,7 @@ import TodoList from './TodoList';
 import ClaudeLogo from './ClaudeLogo.jsx';
 import CursorLogo from './CursorLogo.jsx';
 import CodexLogo from './CodexLogo.jsx';
+import GeminiLogo from './GeminiLogo.jsx';
 import NextTaskBanner from './NextTaskBanner.jsx';
 import { useTasksSettings } from '../contexts/TasksSettingsContext';
 
@@ -445,13 +446,15 @@ const MessageComponent = memo(({ message, index, prevMessage, createDiff, onFile
                     <CursorLogo className="w-full h-full" />
                   ) : (localStorage.getItem('selected-provider') || 'claude') === 'codex' ? (
                     <CodexLogo className="w-full h-full" />
+                  ) : (localStorage.getItem('selected-provider') || 'claude') === 'gemini' ? (
+                    <GeminiLogo className="w-full h-full" />
                   ) : (
                     <ClaudeLogo className="w-full h-full" />
                   )}
                 </div>
               )}
               <div className="text-sm font-medium text-gray-900 dark:text-white">
-                {message.type === 'error' ? 'Error' : message.type === 'tool' ? 'Tool' : ((localStorage.getItem('selected-provider') || 'claude') === 'cursor' ? 'Cursor' : (localStorage.getItem('selected-provider') || 'claude') === 'codex' ? 'Codex' : 'Claude')}
+                {message.type === 'error' ? 'Error' : message.type === 'tool' ? 'Tool' : ((localStorage.getItem('selected-provider') || 'claude') === 'cursor' ? 'Cursor' : (localStorage.getItem('selected-provider') || 'claude') === 'codex' ? 'Codex' : (localStorage.getItem('selected-provider') || 'claude') === 'gemini' ? 'Gemini' : 'Claude')}
               </div>
             </div>
           )}
@@ -1731,6 +1734,9 @@ function ChatInterface({ selectedProject, selectedSession, sendMessage, messages
   const [codexModel, setCodexModel] = useState(() => {
     return localStorage.getItem('codex-model') || 'gpt-5.2';
   });
+  const [geminiModel, setGeminiModel] = useState(() => {
+    return localStorage.getItem('gemini-model') || 'gemini-2.5-pro';
+  });
   // Load permission mode for the current session
   useEffect(() => {
     if (selectedSession?.id) {
@@ -2960,7 +2966,7 @@ function ChatInterface({ selectedProject, selectedSession, sendMessage, messages
 
       // Filter messages by session ID to prevent cross-session interference
       // Skip filtering for global messages that apply to all sessions
-      const globalMessageTypes = ['projects_updated', 'taskmaster-project-updated', 'session-created', 'claude-complete', 'codex-complete'];
+      const globalMessageTypes = ['projects_updated', 'taskmaster-project-updated', 'session-created', 'claude-complete', 'codex-complete', 'gemini-complete'];
       const isGlobalMessage = globalMessageTypes.includes(latestMessage.type);
 
       // For new sessions (currentSessionId is null), allow messages through
@@ -3516,6 +3522,100 @@ function ChatInterface({ selectedProject, selectedSession, sendMessage, messages
           }
           break;
 
+        case 'gemini-response': {
+          const geminiData = latestMessage.data;
+          if (geminiData) {
+            const textChunk = geminiData.text
+              || geminiData.delta?.text
+              || geminiData.content
+              || geminiData.message?.content;
+
+            if (textChunk) {
+              const decodedText = decodeHtmlEntities(textChunk);
+              streamBufferRef.current += decodedText;
+              if (!streamTimerRef.current) {
+                streamTimerRef.current = setTimeout(() => {
+                  const chunk = streamBufferRef.current;
+                  streamBufferRef.current = '';
+                  streamTimerRef.current = null;
+                  if (!chunk) return;
+                  setChatMessages(prev => {
+                    const updated = [...prev];
+                    const last = updated[updated.length - 1];
+                    if (last && last.type === 'assistant' && !last.isToolUse && last.isStreaming) {
+                      last.content = (last.content || '') + chunk;
+                    } else {
+                      updated.push({ type: 'assistant', content: chunk, timestamp: new Date(), isStreaming: true });
+                    }
+                    return updated;
+                  });
+                }, 100);
+              }
+              return;
+            }
+
+            if (geminiData.message?.content?.trim()) {
+              const content = decodeHtmlEntities(geminiData.message.content);
+              setChatMessages(prev => [...prev, {
+                type: 'assistant',
+                content,
+                timestamp: new Date()
+              }]);
+            }
+          }
+          break;
+        }
+
+        case 'gemini-complete': {
+          const geminiCompletedSessionId = latestMessage.sessionId || currentSessionId || sessionStorage.getItem('pendingSessionId');
+
+          if (geminiCompletedSessionId === currentSessionId || !currentSessionId) {
+            setIsLoading(false);
+            setCanAbortSession(false);
+            setClaudeStatus(null);
+          }
+
+          setChatMessages(prev => {
+            const updated = [...prev];
+            const last = updated[updated.length - 1];
+            if (last && last.type === 'assistant' && last.isStreaming) {
+              last.isStreaming = false;
+            }
+            return updated;
+          });
+
+          if (geminiCompletedSessionId) {
+            if (onSessionInactive) {
+              onSessionInactive(geminiCompletedSessionId);
+            }
+            if (onSessionNotProcessing) {
+              onSessionNotProcessing(geminiCompletedSessionId);
+            }
+          }
+
+          const geminiPendingSessionId = sessionStorage.getItem('pendingSessionId');
+          if (geminiPendingSessionId && !currentSessionId) {
+            setCurrentSessionId(geminiPendingSessionId);
+            sessionStorage.removeItem('pendingSessionId');
+            console.log('Gemini session complete, ID set to:', geminiPendingSessionId);
+          }
+
+          if (selectedProject) {
+            safeLocalStorage.removeItem(`chat_messages_${selectedProject.name}`);
+          }
+          break;
+        }
+
+        case 'gemini-error':
+          setIsLoading(false);
+          setCanAbortSession(false);
+          setChatMessages(prev => [...prev, {
+            type: 'error',
+            content: latestMessage.error || 'An error occurred with Gemini',
+            timestamp: new Date()
+          }]);
+          break;
+
         case 'codex-complete':
           // Handle Codex session completion
           const codexCompletedSessionId = latestMessage.sessionId || currentSessionId || sessionStorage.getItem('pendingSessionId');
@@ -4012,7 +4112,13 @@ function ChatInterface({ selectedProject, selectedSession, sendMessage, messages
     // Get tools settings from localStorage based on provider
     const getToolsSettings = () => {
       try {
-        const settingsKey = provider === 'cursor' ? 'cursor-tools-settings' : provider === 'codex' ? 'codex-settings' : 'claude-settings';
+        const settingsKey = provider === 'cursor'
+          ? 'cursor-tools-settings'
+          : provider === 'codex'
+          ? 'codex-settings'
+          : provider === 'gemini'
+          ? 'gemini-settings'
+          : 'claude-settings';
         const savedSettings = safeLocalStorage.getItem(settingsKey);
         if (savedSettings) {
           return JSON.parse(savedSettings);
@@ -4062,6 +4168,20 @@ function ChatInterface({ selectedProject, selectedSession, sendMessage, messages
           permissionMode: permissionMode === 'plan' ? 'default' : permissionMode
         }
       });
+    } else if (provider === 'gemini') {
+      sendMessage({
+        type: 'gemini-command',
+        command: input,
+        sessionId: effectiveSessionId,
+        options: {
+          cwd: selectedProject.fullPath || selectedProject.path,
+          projectPath: selectedProject.fullPath || selectedProject.path,
+          sessionId: effectiveSessionId,
+          resume: !!effectiveSessionId,
+          model: geminiModel,
+          permissionMode: permissionMode === 'plan' ? 'default' : permissionMode
+        }
+      });
     } else {
       // Send Claude command (existing code)
       sendMessage({
@@ -4095,7 +4215,7 @@ function ChatInterface({ selectedProject, selectedSession, sendMessage, messages
     if (selectedProject) {
       safeLocalStorage.removeItem(`draft_input_${selectedProject.name}`);
     }
-  }, [input, isLoading, selectedProject, attachedImages, currentSessionId, selectedSession, provider, permissionMode, onSessionActive, cursorModel, claudeModel, codexModel, sendMessage, setInput, setAttachedImages, setUploadingImages, setImageErrors, setIsTextareaExpanded, textareaRef, setChatMessages, setIsLoading, setCanAbortSession, setClaudeStatus, setIsUserScrolledUp, scrollToBottom]);
+  }, [input, isLoading, selectedProject, attachedImages, currentSessionId, selectedSession, provider, permissionMode, onSessionActive, cursorModel, claudeModel, codexModel, geminiModel, sendMessage, setInput, setAttachedImages, setUploadingImages, setImageErrors, setIsTextareaExpanded, textareaRef, setChatMessages, setIsLoading, setCanAbortSession, setClaudeStatus, setIsUserScrolledUp, scrollToBottom]);
 
   // Store handleSubmit in ref so handleCustomCommand can access it
   useEffect(() => {
@@ -4206,7 +4326,7 @@ function ChatInterface({ selectedProject, selectedSession, sendMessage, messages
     if (e.key === 'Tab' && !showFileDropdown && !showCommandMenu) {
       e.preventDefault();
       // Codex doesn't support plan mode
-      const modes = provider === 'codex'
+      const modes = provider === 'codex' || provider === 'gemini'
         ? ['default', 'acceptEdits', 'bypassPermissions']
         : ['default', 'acceptEdits', 'bypassPermissions', 'plan'];
       const currentIndex = modes.indexOf(permissionMode);
@@ -4378,7 +4498,7 @@ function ChatInterface({ selectedProject, selectedSession, sendMessage, messages
 
   const handleModeSwitch = () => {
     // Codex doesn't support plan mode
-    const modes = provider === 'codex'
+    const modes = provider === 'codex' || provider === 'gemini'
       ? ['default', 'acceptEdits', 'bypassPermissions']
       : ['default', 'acceptEdits', 'bypassPermissions', 'plan'];
     const currentIndex = modes.indexOf(permissionMode);
@@ -4397,7 +4517,7 @@ function ChatInterface({ selectedProject, selectedSession, sendMessage, messages
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-center text-gray-500 dark:text-gray-400">
-          <p>Select a project to start chatting with Claude</p>
+          <p>Select a project to start chatting with an assistant</p>
         </div>
       </div>
     );
@@ -4499,6 +4619,38 @@ function ChatInterface({ selectedProject, selectedSession, sendMessage, messages
                     )}
                   </button>
 
+                  {/* Gemini Button */}
+                  <button
+                    onClick={() => {
+                      setProvider('gemini');
+                      localStorage.setItem('selected-provider', 'gemini');
+                      // Focus input after selection
+                      setTimeout(() => textareaRef.current?.focus(), 100);
+                    }}
+                    className={`group relative w-64 h-32 bg-white dark:bg-gray-800 rounded-xl border-2 transition-all duration-200 hover:scale-105 hover:shadow-xl ${
+                      provider === 'gemini'
+                        ? 'border-emerald-500 shadow-lg ring-2 ring-emerald-500/20'
+                        : 'border-gray-200 dark:border-gray-700 hover:border-emerald-400'
+                    }`}
+                  >
+                    <div className="flex flex-col items-center justify-center h-full gap-3">
+                      <GeminiLogo className="w-10 h-10" />
+                      <div>
+                        <p className="font-semibold text-gray-900 dark:text-white">Gemini</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">by Google</p>
+                      </div>
+                    </div>
+                    {provider === 'gemini' && (
+                      <div className="absolute top-2 right-2">
+                        <div className="w-5 h-5 bg-emerald-500 rounded-full flex items-center justify-center">
+                          <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                          </svg>
+                        </div>
+                      </div>
+                    )}
+                  </button>
+
                   {/* Codex Button */}
                   <button
                     onClick={() => {
@@ -4568,6 +4720,21 @@ function ChatInterface({ selectedProject, selectedSession, sendMessage, messages
                       <option value="o3">O3</option>
                       <option value="o4-mini">O4-mini</option>
                     </select>
+                  ) : provider === 'gemini' ? (
+                    <select
+                      value={geminiModel}
+                      onChange={(e) => {
+                        const newModel = e.target.value;
+                        setGeminiModel(newModel);
+                        localStorage.setItem('gemini-model', newModel);
+                      }}
+                      className="pl-4 pr-10 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 min-w-[140px]"
+                    >
+                      <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+                      <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                      <option value="gemini-2.0-pro">Gemini 2.0 Pro</option>
+                      <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+                    </select>
                   ) : (
                     <select
                       value={cursorModel}
@@ -4607,6 +4774,8 @@ function ChatInterface({ selectedProject, selectedSession, sendMessage, messages
                     ? `Ready to use Cursor with ${cursorModel}. Start typing your message below.`
                     : provider === 'codex'
                     ? `Ready to use Codex with ${codexModel}. Start typing your message below.`
+                    : provider === 'gemini'
+                    ? `Ready to use Gemini with ${geminiModel}. Start typing your message below.`
                     : 'Select a provider above to begin'
                   }
                 </p>
@@ -4709,11 +4878,13 @@ function ChatInterface({ selectedProject, selectedSession, sendMessage, messages
                     <CursorLogo className="w-full h-full" />
                   ) : (localStorage.getItem('selected-provider') || 'claude') === 'codex' ? (
                     <CodexLogo className="w-full h-full" />
+                  ) : (localStorage.getItem('selected-provider') || 'claude') === 'gemini' ? (
+                    <GeminiLogo className="w-full h-full" />
                   ) : (
                     <ClaudeLogo className="w-full h-full" />
                   )}
                 </div>
-                <div className="text-sm font-medium text-gray-900 dark:text-white">{(localStorage.getItem('selected-provider') || 'claude') === 'cursor' ? 'Cursor' : (localStorage.getItem('selected-provider') || 'claude') === 'codex' ? 'Codex' : 'Claude'}</div>
+                <div className="text-sm font-medium text-gray-900 dark:text-white">{(localStorage.getItem('selected-provider') || 'claude') === 'cursor' ? 'Cursor' : (localStorage.getItem('selected-provider') || 'claude') === 'codex' ? 'Codex' : (localStorage.getItem('selected-provider') || 'claude') === 'gemini' ? 'Gemini' : 'Claude'}</div>
                 {/* Abort button removed - functionality not yet implemented at backend */}
               </div>
               <div className="w-full text-sm text-gray-500 dark:text-gray-400 pl-3 sm:pl-0">
@@ -4991,7 +5162,7 @@ function ChatInterface({ selectedProject, selectedSession, sendMessage, messages
                 const isExpanded = e.target.scrollHeight > lineHeight * 2;
                 setIsTextareaExpanded(isExpanded);
               }}
-              placeholder={`Type / for commands, @ for files, or ask ${provider === 'cursor' ? 'Cursor' : 'Claude'} anything...`}
+              placeholder={`Type / for commands, @ for files, or ask ${provider === 'cursor' ? 'Cursor' : provider === 'codex' ? 'Codex' : provider === 'gemini' ? 'Gemini' : 'Claude'} anything...`}
               disabled={isLoading}
               className="chat-input-placeholder block w-full pl-12 pr-20 sm:pr-40 py-1.5 sm:py-4 bg-transparent rounded-2xl focus:outline-none text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 disabled:opacity-50 resize-none min-h-[50px] sm:min-h-[80px] max-h-[40vh] sm:max-h-[300px] overflow-y-auto text-sm sm:text-base leading-[21px] sm:leading-6 transition-all duration-200"
               style={{ height: '50px' }}

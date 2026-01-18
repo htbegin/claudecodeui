@@ -299,6 +299,26 @@ function CodexMcpServers({ servers, onAdd, onEdit, onDelete }) {
   );
 }
 
+function GeminiMcpServers() {
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <Server className="w-5 h-5 text-emerald-500" />
+        <h3 className="text-lg font-medium text-foreground">
+          MCP Servers
+        </h3>
+      </div>
+      <p className="text-sm text-muted-foreground">
+        Gemini CLI currently manages MCP servers outside of Claude Code UI.
+        Configure MCP servers directly in the Gemini CLI until native support is available.
+      </p>
+      <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg p-4 text-sm text-emerald-900 dark:text-emerald-100">
+        MCP server management for Gemini is not yet wired into the UI.
+      </div>
+    </div>
+  );
+}
+
 // Main component
 export default function McpServersContent({ agent, ...props }) {
   if (agent === 'claude') {
@@ -309,6 +329,9 @@ export default function McpServersContent({ agent, ...props }) {
   }
   if (agent === 'codex') {
     return <CodexMcpServers {...props} />;
+  }
+  if (agent === 'gemini') {
+    return <GeminiMcpServers />;
   }
   return null;
 }

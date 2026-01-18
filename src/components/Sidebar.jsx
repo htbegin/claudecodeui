@@ -225,13 +225,14 @@ function Sidebar({
     const claudeSessions = [...(project.sessions || []), ...(additionalSessions[project.name] || [])].map(s => ({ ...s, __provider: 'claude' }));
     const cursorSessions = (project.cursorSessions || []).map(s => ({ ...s, __provider: 'cursor' }));
     const codexSessions = (project.codexSessions || []).map(s => ({ ...s, __provider: 'codex' }));
+    const geminiSessions = (project.geminiSessions || []).map(s => ({ ...s, __provider: 'gemini' }));
     // Sort by most recent activity/date
     const normalizeDate = (s) => {
       if (s.__provider === 'cursor') return new Date(s.createdAt);
       if (s.__provider === 'codex') return new Date(s.createdAt || s.lastActivity);
       return new Date(s.lastActivity);
     };
-    return [...claudeSessions, ...cursorSessions, ...codexSessions].sort((a, b) => normalizeDate(b) - normalizeDate(a));
+    return [...claudeSessions, ...cursorSessions, ...codexSessions, ...geminiSessions].sort((a, b) => normalizeDate(b) - normalizeDate(a));
   };
 
   // Helper function to get the last activity date for a project
@@ -315,6 +316,8 @@ function Sidebar({
       let response;
       if (provider === 'codex') {
         response = await api.deleteCodexSession(sessionId);
+      } else if (provider === 'gemini') {
+        response = await api.deleteGeminiSession(sessionId);
       } else {
         response = await api.deleteSession(projectName, sessionId);
       }
